@@ -1,0 +1,14 @@
+opencv-python
+ultralytics
+fastapi
+uvicorn
+requests
+pillow
+numpy
+reportlab
+python-multipart
+passlib
+python-jose
+deepface
+aiofiles
+python-multipart
