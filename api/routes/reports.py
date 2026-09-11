@@ -1,80 +1,71 @@
-from fastapi import APIRouter, Depends
-from fastapi.responses import FileResponse
-from reportlab.lib.pagesizes import A4
-from reportlab.lib import colors
-from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
-from reportlab.lib.styles import getSampleStyleSheet
+"""
+PDF report generation — generates a per-user surveillance report.
+"""
+from io import BytesIO
 from datetime import datetime
-import os
+from fastapi import APIRouter, Depends
+from fastapi.responses import StreamingResponse
+from sqlalchemy import desc
+
 from api.middleware import get_current_user
-from database.models import get_all_detections
-from config import BASE_DIR
+from database.db import session_scope
+from database.models import Detection
 
-router = APIRouter()
+router = APIRouter(prefix="/reports", tags=["Reports"])
 
-def generate_pdf(detections: list, filepath: str):
-    doc    = SimpleDocTemplate(filepath, pagesize=A4)
+
+@router.get("/pdf")
+def download_pdf(current_user=Depends(get_current_user)):
+    """Generate a PDF report of the current user's detection history."""
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib import colors
+    from reportlab.lib.styles import getSampleStyleSheet
+    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+
+    uid = current_user["id"]
+    with session_scope() as s:
+        rows = s.query(Detection).filter_by(user_id=uid) \
+                                 .order_by(desc(Detection.timestamp)) \
+                                 .limit(500).all()
+        uname = current_user["username"]
+
+    buf = BytesIO()
+    doc = SimpleDocTemplate(buf, pagesize=A4, title=f"Agent Eye Report - {uname}")
     styles = getSampleStyleSheet()
-    story  = []
+    story  = [
+        Paragraph(f"<b>Agent Eye Surveillance Report</b>", styles["Title"]),
+        Paragraph(f"User: <b>{uname}</b> &nbsp;&nbsp; Generated: {datetime.utcnow():%Y-%m-%d %H:%M UTC}",
+                  styles["Normal"]),
+        Spacer(1, 12),
+    ]
+    if not rows:
+        story.append(Paragraph("No detections recorded yet.", styles["Italic"]))
+    else:
+        data = [["#", "Timestamp (UTC)", "Label", "Confidence", "Camera"]]
+        for i, r in enumerate(rows, 1):
+            data.append([
+                str(i),
+                r.timestamp.strftime("%Y-%m-%d %H:%M:%S") if r.timestamp else "-",
+                r.label,
+                f"{r.confidence}%",
+                r.camera_source or "-",
+            ])
+        t = Table(data, hAlign="LEFT")
+        t.setStyle(TableStyle([
+            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#0d6efd")),
+            ("TEXTCOLOR",  (0, 0), (-1, 0), colors.white),
+            ("FONTNAME",   (0, 0), (-1, 0), "Helvetica-Bold"),
+            ("FONTSIZE",   (0, 0), (-1, -1), 9),
+            ("GRID",       (0, 0), (-1, -1), 0.25, colors.grey),
+            ("ROWBACKGROUNDS", (0, 1), (-1, -1),
+             [colors.white, colors.HexColor("#f6f8fa")]),
+        ]))
+        story.append(t)
 
-    # ── Title ────────────────────────────────────────────
-    story.append(Paragraph("Smart Surveillance Report", styles["Title"]))
-    story.append(Paragraph(
-        f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
-        styles["Normal"]
-    ))
-    story.append(Spacer(1, 20))
-
-    # ── Summary ──────────────────────────────────────────
-    total    = len(detections)
-    intruders = sum(1 for d in detections if d["type"] == "intruder")
-    story.append(Paragraph(f"Total detections: {total}", styles["Normal"]))
-    story.append(Paragraph(f"Intruder alerts: {intruders}", styles["Normal"]))
-    story.append(Spacer(1, 20))
-
-    # ── Table ────────────────────────────────────────────
-    headers = ["ID", "Camera", "Type", "Label", "Timestamp"]
-    rows    = [headers]
-    for d in detections:
-        rows.append([
-            str(d["id"]),
-            str(d["camera_id"]),
-            d["type"],
-            d["label"] or "-",
-            d["timestamp"]
-        ])
-
-    table = Table(rows, colWidths=[40, 60, 80, 120, 160])
-    table.setStyle(TableStyle([
-        ("BACKGROUND",  (0,0), (-1,0), colors.HexColor("#2C2C2A")),
-        ("TEXTCOLOR",   (0,0), (-1,0), colors.white),
-        ("FONTNAME",    (0,0), (-1,0), "Helvetica-Bold"),
-        ("FONTSIZE",    (0,0), (-1,-1), 9),
-        ("ROWBACKGROUNDS", (0,1), (-1,-1), [colors.white, colors.HexColor("#F1EFE8")]),
-        ("GRID",        (0,0), (-1,-1), 0.5, colors.HexColor("#B4B2A9")),
-        ("ALIGN",       (0,0), (-1,-1), "CENTER"),
-        ("VALIGN",      (0,0), (-1,-1), "MIDDLE"),
-        ("TOPPADDING",  (0,0), (-1,-1), 6),
-        ("BOTTOMPADDING",(0,0), (-1,-1), 6),
-    ]))
-    story.append(table)
     doc.build(story)
-
-# ── Generate + download report ───────────────────────────
-@router.get("/generate")
-def generate_report(
-    limit        : int = 500,
-    current_user      = Depends(get_current_user)
-):
-    detections = get_all_detections(limit=limit)
-    timestamp  = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-    filename   = f"report_{timestamp}.pdf"
-    filepath   = os.path.join(BASE_DIR, filename)
-
-    generate_pdf(detections, filepath)
-
-    return FileResponse(
-        path             = filepath,
-        media_type       = "application/pdf",
-        filename         = filename
+    buf.seek(0)
+    return StreamingResponse(
+        buf,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="agent_eye_report_{uname}.pdf"'},
     )

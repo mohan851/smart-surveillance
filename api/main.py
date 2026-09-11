@@ -1,18 +1,38 @@
+"""
+Agent Eye — FastAPI entry point.
+
+Multi-tenant routes:
+  /auth/...            auth, signup, login, me
+  /me/settings/...     per-user config (Telegram, camera, alerts)
+  /agent/...           local agent ↔ cloud (register, heartbeat, event)
+  /me/...              dashboard data (stats, detections, agents, agent-script)
+  /cameras/...         per-user camera/agent list
+  /detections/...      per-user detection history + known faces
+  /reports/...         per-user PDF export
+"""
 import sys
 import os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+import logging
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
+
 from database.db import init_db
-from api.routes import auth, cameras, detections, reports
+from api.routes import auth, cameras, detections, reports, settings, agent_api, dashboard
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+)
+log = logging.getLogger("agent_eye")
 
 app = FastAPI(
-    title       = "Smart Surveillance API",
-    description = "AI-powered surveillance system",
-    version     = "1.0.0"
+    title       = "Agent Eye API",
+    description = "AI-powered multi-tenant smart surveillance",
+    version     = "2.0.0",
 )
 
 # ── CORS ─────────────────────────────────────────────────
@@ -24,27 +44,41 @@ app.add_middleware(
     allow_headers     = ["*"],
 )
 
-# ── Serve dashboard static files ─────────────────────────
+# ── Static dashboard ─────────────────────────────────────
 app.mount("/static", StaticFiles(directory="dashboard"), name="static")
 
-# ── Init database on startup ─────────────────────────────
+
+# ── Init schema on startup ───────────────────────────────
 @app.on_event("startup")
 async def startup_event():
     init_db()
-    print("🚀 Smart Surveillance API started")
+    log.info("Agent Eye API started")
+
 
 # ── Routes ───────────────────────────────────────────────
 app.include_router(auth.router,       prefix="/auth",       tags=["Auth"])
-app.include_router(cameras.router,    prefix="/cameras",    tags=["Cameras"])
-app.include_router(detections.router, prefix="/detections", tags=["Detections"])
-app.include_router(reports.router,    prefix="/reports",    tags=["Reports"])
+app.include_router(settings.router,                       tags=["Settings"])
+app.include_router(agent_api.router,                      tags=["Agent"])
+app.include_router(dashboard.router,                      tags=["Dashboard"])
+app.include_router(cameras.router,                        tags=["Cameras"])
+app.include_router(detections.router,                     tags=["Detections"])
+app.include_router(reports.router,                        tags=["Reports"])
 
-# ── Serve dashboard at root ───────────────────────────────
+
+# ── Dashboard at root ────────────────────────────────────
 @app.get("/")
 async def dashboard():
     return FileResponse("dashboard/index.html")
 
+
 # ── Health check ─────────────────────────────────────────
 @app.get("/health")
 async def health():
-    return {"status": "running", "message": "Smart Surveillance API is live"}
+    from database.db import engine
+    db_kind = "postgresql" if "postgresql" in str(engine.url) else "sqlite"
+    return {
+        "status": "running",
+        "message": "Agent Eye API is live",
+        "version": "2.0.0",
+        "database": db_kind,
+    }

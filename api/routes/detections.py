@@ -1,64 +1,72 @@
-from fastapi import APIRouter, Depends, HTTPException
-from fastapi.responses import FileResponse
-from api.middleware import get_current_user, require_admin
-from database.models import get_all_detections, insert_known_face, get_all_known_faces
-import os
-import shutil
-from fastapi import UploadFile, File, Form
-from config import KNOWN_FACES_DIR, SNAPSHOTS_DIR
+"""
+Detection list / known-faces / reports — all scoped to the current user.
+"""
+from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy import desc
+from typing import Optional
 
-router = APIRouter()
+from api.middleware import get_current_user
+from database.db import session_scope
+from database.models import Detection, Alert, KnownFace
+from api.routes.agent_api import _list_user_detections
 
-# ── Get all detections ───────────────────────────────────
-@router.get("/")
-def get_detections(
-    limit        : int = 100,
-    current_user      = Depends(get_current_user)
-):
-    return get_all_detections(limit=limit)
+router = APIRouter(prefix="/detections", tags=["Detections"])
 
-# ── Get snapshot image ───────────────────────────────────
-@router.get("/snapshot/{filename}")
-def get_snapshot(filename: str):
-    path = os.path.join(SNAPSHOTS_DIR, filename)
-    if not os.path.exists(path):
-        raise HTTPException(status_code=404, detail="Snapshot not found")
-    return FileResponse(path)
 
-# ── Get all known faces ──────────────────────────────────
+@router.get("")
+def list_detections(limit: int = 100, label: Optional[str] = None,
+                    current_user=Depends(get_current_user)):
+    uid = current_user["id"]
+    with session_scope() as s:
+        q = s.query(Detection).filter_by(user_id=uid)
+        if label:
+            q = q.filter(Detection.label == label)
+        rows = q.order_by(desc(Detection.timestamp)).limit(limit).all()
+        out = []
+        for r in rows:
+            out.append({
+                "id":            r.id,
+                "label":         r.label,
+                "confidence":    r.confidence,
+                "snapshot_path": r.snapshot_path,
+                "camera_source": r.camera_source,
+                "timestamp":     r.timestamp.isoformat() if r.timestamp else None,
+            })
+        return out
+
+
 @router.get("/known-faces")
-def known_faces(current_user=Depends(get_current_user)):
-    return get_all_known_faces()
+def list_known_faces(current_user=Depends(get_current_user)):
+    uid = current_user["id"]
+    with session_scope() as s:
+        rows = s.query(KnownFace).filter_by(user_id=uid).all()
+        return [{
+            "id":         r.id,
+            "name":       r.name,
+            "image_path": r.image_path,
+            "added_at":   r.added_at.isoformat() if r.added_at else None,
+        } for r in rows]
 
-# ── Register a new known face ────────────────────────────
+
 @router.post("/known-faces")
-async def register_face(
-    name         : str        = Form(...),
-    file         : UploadFile = File(...),
-    admin                     = Depends(require_admin)
-):
-    ext      = os.path.splitext(file.filename)[1]
-    filename = f"{name}{ext}"
-    path     = os.path.join(KNOWN_FACES_DIR, filename)
+def add_known_face(name: str, image_path: str, current_user=Depends(get_current_user)):
+    uid = current_user["id"]
+    with session_scope() as s:
+        existing = s.query(KnownFace).filter_by(user_id=uid, name=name).first()
+        if existing:
+            existing.image_path = image_path
+            return {"message": f"Updated '{name}'"}
+        kf = KnownFace(user_id=uid, name=name, image_path=image_path)
+        s.add(kf)
+        return {"message": f"Added known face '{name}'"}
 
-    with open(path, "wb") as f:
-        shutil.copyfileobj(file.file, f)
 
-    insert_known_face(name, path)
-    return {"message": f"Face registered for '{name}'", "path": path}
-
-# ── Delete a known face ──────────────────────────────────
-@router.delete("/known-faces/{name}")
-def delete_face(name: str, admin=Depends(require_admin)):
-    conn = __import__('database.db', fromlist=['get_connection']).get_connection()
-    row  = conn.execute(
-        "SELECT image_path FROM known_faces WHERE name = ?", (name,)
-    ).fetchone()
-    if not row:
-        raise HTTPException(status_code=404, detail="Face not found")
-    if os.path.exists(row["image_path"]):
-        os.remove(row["image_path"])
-    conn.execute("DELETE FROM known_faces WHERE name = ?", (name,))
-    conn.commit()
-    conn.close()
-    return {"message": f"Face '{name}' deleted"}
+@router.delete("/known-faces/{face_id}")
+def delete_known_face(face_id: int, current_user=Depends(get_current_user)):
+    uid = current_user["id"]
+    with session_scope() as s:
+        kf = s.query(KnownFace).filter_by(id=face_id, user_id=uid).first()
+        if not kf:
+            raise HTTPException(status_code=404, detail="Not found")
+        s.delete(kf)
+        return {"message": "Removed"}
