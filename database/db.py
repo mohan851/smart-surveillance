@@ -26,7 +26,7 @@ def _make_engine():
         log.info("DB: SQLite (USE_SQLITE env flag set)")
         return _sqlite_engine()
 
-    # Try Postgres first
+    # Try Postgres first (with short timeout so a slow DB doesn't hang startup)
     try:
         engine = create_engine(
             SUPABASE_DB_URL,
@@ -34,6 +34,7 @@ def _make_engine():
             pool_recycle=300,           # recycle every 5 min (Supabase idle = 6 min)
             pool_size=5,
             max_overflow=10,
+            connect_args={"connect_timeout": 5},  # psycopg2: 5s connect timeout
             future=True,
         )
         with engine.connect() as c:
