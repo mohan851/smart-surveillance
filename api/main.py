@@ -39,14 +39,9 @@ app.include_router(cameras.router,    prefix="/cameras",    tags=["Cameras"])
 app.include_router(detections.router, prefix="/detections", tags=["Detections"])
 app.include_router(reports.router,    prefix="/reports",    tags=["Reports"])
 
-
 # ── Serve dashboard at root ───────────────────────────────
 @app.get("/")
 async def dashboard():
-    # Cloud deploy serves the demo page; locally you can swap to index.html
-    demo_path = "dashboard/demo.html"
-    if os.path.exists(demo_path):
-        return FileResponse(demo_path)
     return FileResponse("dashboard/index.html")
 
 # ── Health check ─────────────────────────────────────────
