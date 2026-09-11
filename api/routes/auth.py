@@ -7,7 +7,7 @@ Authentication routes for Agent Eye.
 """
 from fastapi import APIRouter, HTTPException, Depends
 from fastapi.security import OAuth2PasswordRequestForm
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel,  Field
 from sqlalchemy.exc import IntegrityError
 from datetime import datetime
 
@@ -25,7 +25,7 @@ router = APIRouter()
 class SignupRequest(BaseModel):
     username  : str            = Field(..., min_length=3, max_length=80)
     password  : str            = Field(..., min_length=6, max_length=128)
-    email     : EmailStr | None = None
+    email : str | None = None
     full_name : str | None     = None
     company   : str | None     = None
 
