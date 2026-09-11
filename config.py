@@ -2,10 +2,14 @@ import os
 
 # ── Base paths ──────────────────────────────────────────
 BASE_DIR        = os.path.dirname(os.path.abspath(__file__))
-RECORDINGS_DIR  = os.path.join(BASE_DIR, "recordings")
-SNAPSHOTS_DIR   = os.path.join(BASE_DIR, "snapshots")
-KNOWN_FACES_DIR = os.path.join(BASE_DIR, "known_faces")
-DB_PATH         = os.path.join(BASE_DIR, "database", "surveillance.db")
+# On Render the filesystem is ephemeral — use /tmp for runtime artifacts.
+_USE_TMP = os.getenv("USE_TMP_STORAGE", "").lower() in ("1", "true", "yes") or os.path.exists("/opt/render")
+_STORAGE_ROOT = "/tmp" if _USE_TMP else BASE_DIR
+
+RECORDINGS_DIR  = os.path.join(_STORAGE_ROOT, "recordings")
+SNAPSHOTS_DIR   = os.path.join(_STORAGE_ROOT, "snapshots")
+KNOWN_FACES_DIR = os.path.join(_STORAGE_ROOT, "known_faces")
+DB_PATH         = os.path.join(_STORAGE_ROOT, "database", "surveillance.db")
 
 # ── Camera settings ──────────────────────────────────────
 CAMERA_IDS = [0]          # 0 = default webcam, add 1,2.. for more cameras

@@ -1,7 +1,12 @@
 import cv2
 import os
 from datetime import datetime
-from deepface import DeepFace
+try:
+    from deepface import DeepFace
+    _DEEPFACE_AVAILABLE = True
+except ImportError:
+    DeepFace = None
+    _DEEPFACE_AVAILABLE = False
 from ultralytics import YOLO
 from config import (
     KNOWN_FACES_DIR, SNAPSHOTS_DIR,

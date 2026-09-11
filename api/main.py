@@ -7,7 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from database.db import init_db
-from api.routes import auth, cameras, detections, reports
+from api.routes import auth, cameras, detections, reports, demo
 
 app = FastAPI(
     title       = "Smart Surveillance API",
@@ -38,10 +38,15 @@ app.include_router(auth.router,       prefix="/auth",       tags=["Auth"])
 app.include_router(cameras.router,    prefix="/cameras",    tags=["Cameras"])
 app.include_router(detections.router, prefix="/detections", tags=["Detections"])
 app.include_router(reports.router,    prefix="/reports",    tags=["Reports"])
+app.include_router(demo.router,       prefix="",            tags=["Demo"])
 
 # ── Serve dashboard at root ───────────────────────────────
 @app.get("/")
 async def dashboard():
+    # Cloud deploy serves the demo page; locally you can swap to index.html
+    demo_path = "dashboard/demo.html"
+    if os.path.exists(demo_path):
+        return FileResponse(demo_path)
     return FileResponse("dashboard/index.html")
 
 # ── Health check ─────────────────────────────────────────

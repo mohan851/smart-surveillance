@@ -107,4 +107,4 @@ Press `Q` to quit.
 
 ## 👤 Author
 
-Built by **Parth** — B.Tech CSE Final Year, BVRIT Narsapur
+Built by **MohanKrishna** — B.Tech CSE Final Year, BVRIT Narsapur

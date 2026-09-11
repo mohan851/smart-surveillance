@@ -1,0 +1,19 @@
+# Render Blueprint — AgentEye demo (video upload + YOLO, no DeepFace).
+# Connect this repo at https://render.com → New → Blueprint → pick this repo.
+
+services:
+  - type: web
+    name: agenteye-demo
+    runtime: python
+    plan: free
+    buildCommand: "pip install --upgrade pip && pip install -r requirements-demo.txt"
+    startCommand: "uvicorn api.main:app --host 0.0.0.0 --port $PORT"
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.9
+      - key: USE_TMP_STORAGE
+        value: "true"
+      - key: YOLO_MODEL
+        value: "yolov8n.pt"

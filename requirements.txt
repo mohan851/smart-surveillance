@@ -1,5 +1,3 @@
-opencv-python
-ultralytics
 fastapi
 uvicorn
 requests
@@ -9,6 +7,8 @@ reportlab
 python-multipart
 passlib
 python-jose
-deepface
 aiofiles
-python-multipart
+sqlalchemy
+psycopg2-binary
+cryptography
+python-dotenv

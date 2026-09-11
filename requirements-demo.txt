@@ -1,0 +1,16 @@
+# Slim requirements for cloud demo deploy (Render free tier friendly).
+# Excludes DeepFace (~100MB+ of model downloads) — only YOLO object detection
+# is used in the cloud demo. For local full-featured installs, use requirements.txt.
+
+fastapi
+uvicorn[standard]
+python-multipart
+opencv-python-headless
+ultralytics
+numpy
+pillow
+aiofiles
+reportlab
+requests
+passlib
+python-jose
