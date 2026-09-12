@@ -3,297 +3,1080 @@
 <head>
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Smart Surveillance Dashboard</title>
+  <title>Agent Eye — AI Surveillance</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet"/>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
   <style>
-    * { margin:0; padding:0; box-sizing:border-box; }
-    body { font-family: sans-serif; background:#1a1a1a; color:#eee; }
+    /* ── Reset + Base ─────────────────────────────────── */
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    :root {
+      --bg:        #0a0a0f;
+      --surface:   #14141c;
+      --card:      #1c1c28;
+      --card-2:    #232333;
+      --border:    #2a2a3a;
+      --primary:   #5b8cff;
+      --primary-2: #a855f7;
+      --gradient:  linear-gradient(135deg, #5b8cff 0%, #a855f7 100%);
+      --success:   #10b981;
+      --danger:    #ef4444;
+      --warning:   #f59e0b;
+      --text:      #e5e7eb;
+      --muted:     #9ca3af;
+      --shadow:    0 8px 24px rgba(0, 0, 0, 0.4);
+    }
+    html, body {
+      font-family: 'Inter', system-ui, -apple-system, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      line-height: 1.5;
+    }
+    a { color: var(--primary); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    button { font-family: inherit; cursor: pointer; }
 
-    .navbar {
-      background:#111; padding:16px 24px;
-      display:flex; justify-content:space-between; align-items:center;
-      border-bottom:1px solid #333;
-    }
-    .navbar h1 { font-size:18px; color:#fff; }
-    .navbar button {
-      background:#e74c3c; color:#fff; border:none;
-      padding:8px 16px; border-radius:6px; cursor:pointer;
-    }
+    /* ── Layout helpers ────────────────────────────────── */
+    .hidden { display: none !important; }
+    .container { max-width: 1200px; margin: 0 auto; padding: 0 24px; }
+    .row { display: flex; gap: 12px; align-items: center; }
+    .col { display: flex; flex-direction: column; gap: 12px; }
 
-    .container { padding:24px; }
-
-    .cards {
-      display:grid; grid-template-columns:repeat(auto-fit, minmax(200px,1fr));
-      gap:16px; margin-bottom:24px;
-    }
-    .card {
-      background:#2a2a2a; border-radius:10px;
-      padding:20px; text-align:center;
-      border:1px solid #333;
-    }
-    .card h2 { font-size:32px; color:#3498db; }
-    .card p  { font-size:13px; color:#aaa; margin-top:6px; }
-
-    .section { margin-bottom:32px; }
-    .section h3 {
-      font-size:16px; margin-bottom:12px;
-      color:#fff; border-left:3px solid #3498db;
-      padding-left:10px;
-    }
-
-    table {
-      width:100%; border-collapse:collapse;
-      background:#2a2a2a; border-radius:10px;
-      overflow:hidden;
-    }
-    th {
-      background:#111; padding:12px 16px;
-      text-align:left; font-size:13px; color:#aaa;
-    }
-    td {
-      padding:12px 16px; font-size:13px;
-      border-bottom:1px solid #333;
-    }
-    tr:last-child td { border-bottom:none; }
-
-    .badge {
-      padding:4px 10px; border-radius:20px;
-      font-size:11px; font-weight:bold;
-    }
-    .badge.intruder { background:#e74c3c22; color:#e74c3c; }
-    .badge.face     { background:#2ecc7122; color:#2ecc71; }
-    .badge.object   { background:#f39c1222; color:#f39c12; }
-
+    /* ── Buttons ───────────────────────────────────────── */
     .btn {
-      padding:8px 16px; border-radius:6px;
-      border:none; cursor:pointer; font-size:13px;
+      display: inline-flex; align-items: center; justify-content: center;
+      gap: 8px;
+      padding: 12px 22px;
+      border: none; border-radius: 10px;
+      font-size: 14px; font-weight: 600;
+      transition: transform 0.15s, box-shadow 0.15s, opacity 0.15s;
     }
-    .btn-blue  { background:#3498db; color:#fff; }
-    .btn-green { background:#2ecc71; color:#fff; }
-    .btn-red   { background:#e74c3c; color:#fff; }
+    .btn:hover { transform: translateY(-1px); }
+    .btn:disabled { opacity: 0.6; cursor: not-allowed; transform: none; }
+    .btn-primary { background: var(--gradient); color: white; box-shadow: 0 4px 14px rgba(91, 140, 255, 0.3); }
+    .btn-ghost   { background: transparent; color: var(--text); border: 1px solid var(--border); }
+    .btn-ghost:hover { background: var(--card); }
+    .btn-danger  { background: rgba(239, 68, 68, 0.12); color: var(--danger); border: 1px solid rgba(239, 68, 68, 0.3); }
+    .btn-sm      { padding: 8px 14px; font-size: 13px; }
+    .btn-block   { width: 100%; }
 
-    #login-screen {
-      display:flex; justify-content:center;
-      align-items:center; height:100vh;
-      background:#1a1a1a;
+    /* ── Inputs ────────────────────────────────────────── */
+    .field { display: flex; flex-direction: column; gap: 6px; }
+    .field label { font-size: 13px; color: var(--muted); font-weight: 500; }
+    .input, .textarea, select.input {
+      padding: 11px 14px;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--text);
+      font-size: 14px;
+      font-family: inherit;
+      transition: border-color 0.15s;
     }
-    .login-box {
-      background:#2a2a2a; padding:40px;
-      border-radius:12px; width:360px;
-      border:1px solid #333;
+    .input:focus, .textarea:focus, select.input:focus {
+      outline: none;
+      border-color: var(--primary);
     }
-    .login-box h2 { margin-bottom:24px; text-align:center; }
-    .login-box input {
-      width:100%; padding:10px 14px;
-      margin-bottom:14px; border-radius:6px;
-      border:1px solid #444; background:#1a1a1a;
-      color:#eee; font-size:14px;
+    .textarea { resize: vertical; min-height: 80px; }
+
+    /* ── Cards ─────────────────────────────────────────── */
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 20px;
     }
-    .login-box button {
-      width:100%; padding:12px;
-      background:#3498db; color:#fff;
-      border:none; border-radius:6px;
-      cursor:pointer; font-size:15px;
+    .card-title { font-size: 16px; font-weight: 600; margin-bottom: 14px; }
+
+    /* ── Landing page ──────────────────────────────────── */
+    #view-landing {
+      min-height: 100vh;
+      display: flex; align-items: center; justify-content: center;
+      padding: 40px 20px;
+      background: radial-gradient(circle at 20% 20%, rgba(91,140,255,0.15), transparent 50%),
+                  radial-gradient(circle at 80% 80%, rgba(168,85,247,0.15), transparent 50%),
+                  var(--bg);
     }
-    #error-msg { color:#e74c3c; font-size:13px; margin-top:8px; text-align:center; }
-    #dashboard { display:none; }
+    .landing-inner { max-width: 720px; text-align: center; }
+    .brand {
+      display: inline-flex; align-items: center; gap: 10px;
+      padding: 8px 14px; border-radius: 999px;
+      background: var(--card); border: 1px solid var(--border);
+      font-size: 13px; color: var(--muted); margin-bottom: 32px;
+    }
+    .brand-dot {
+      width: 8px; height: 8px; border-radius: 50%;
+      background: var(--success);
+      animation: pulse 2s infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.4; }
+    }
+    .hero-title {
+      font-size: clamp(36px, 6vw, 56px);
+      font-weight: 800;
+      letter-spacing: -0.02em;
+      line-height: 1.1;
+      margin-bottom: 20px;
+    }
+    .hero-title span {
+      background: var(--gradient);
+      -webkit-background-clip: text;
+      background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    .hero-sub {
+      font-size: 18px;
+      color: var(--muted);
+      max-width: 540px;
+      margin: 0 auto 36px;
+    }
+    .hero-cta { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
+    .features {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 16px;
+      margin-top: 60px;
+    }
+    .feature {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 20px;
+      text-align: left;
+    }
+    .feature-icon {
+      width: 40px; height: 40px; border-radius: 10px;
+      background: var(--gradient);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 20px; margin-bottom: 12px;
+    }
+    .feature h3 { font-size: 15px; font-weight: 600; margin-bottom: 6px; }
+    .feature p { font-size: 13px; color: var(--muted); }
+
+    /* ── Auth forms (signup + login) ──────────────────── */
+    #view-signup, #view-login {
+      min-height: 100vh;
+      display: flex; align-items: center; justify-content: center;
+      padding: 40px 20px;
+    }
+    .auth-card {
+      width: 100%; max-width: 420px;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 32px;
+      box-shadow: var(--shadow);
+    }
+    .auth-card h2 { font-size: 24px; font-weight: 700; margin-bottom: 8px; }
+    .auth-card .subtitle { color: var(--muted); font-size: 14px; margin-bottom: 24px; }
+    .auth-card form { display: flex; flex-direction: column; gap: 14px; }
+    .auth-card .footer-link {
+      text-align: center; margin-top: 18px;
+      font-size: 13px; color: var(--muted);
+    }
+
+    /* ── Dashboard ────────────────────────────────────── */
+    #view-dashboard {
+      display: grid;
+      grid-template-columns: 240px 1fr;
+      grid-template-rows: 64px 1fr;
+      grid-template-areas:
+        "nav nav"
+        "side main";
+      min-height: 100vh;
+    }
+    .topnav {
+      grid-area: nav;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 0 24px;
+      position: sticky; top: 0; z-index: 10;
+    }
+    .topnav .logo {
+      display: flex; align-items: center; gap: 10px;
+      font-weight: 700; font-size: 16px;
+    }
+    .topnav .logo-mark {
+      width: 28px; height: 28px; border-radius: 8px;
+      background: var(--gradient);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 16px;
+    }
+    .user-chip {
+      display: flex; align-items: center; gap: 10px;
+      padding: 6px 12px;
+      background: var(--card);
+      border-radius: 999px;
+      border: 1px solid var(--border);
+    }
+    .user-avatar {
+      width: 28px; height: 28px; border-radius: 50%;
+      background: var(--gradient);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 13px; font-weight: 700;
+    }
+
+    .sidebar {
+      grid-area: side;
+      background: var(--surface);
+      border-right: 1px solid var(--border);
+      padding: 16px 12px;
+    }
+    .nav-item {
+      display: flex; align-items: center; gap: 10px;
+      padding: 10px 14px;
+      border-radius: 8px;
+      color: var(--muted);
+      cursor: pointer;
+      font-size: 14px;
+      font-weight: 500;
+      transition: background 0.15s, color 0.15s;
+      margin-bottom: 4px;
+    }
+    .nav-item:hover { background: var(--card); color: var(--text); }
+    .nav-item.active {
+      background: var(--card);
+      color: var(--text);
+      box-shadow: inset 3px 0 0 var(--primary);
+    }
+    .nav-icon { font-size: 16px; }
+
+    .main {
+      grid-area: main;
+      padding: 24px;
+      overflow-y: auto;
+    }
+    .page-head {
+      display: flex; align-items: center; justify-content: space-between;
+      margin-bottom: 24px;
+    }
+    .page-head h1 { font-size: 24px; font-weight: 700; }
+    .page-head p  { color: var(--muted); font-size: 14px; margin-top: 4px; }
+
+    /* ── Stat cards ─────────────────────────────────── */
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 14px;
+      margin-bottom: 24px;
+    }
+    .stat-card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 18px;
+    }
+    .stat-card .stat-label { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em; }
+    .stat-card .stat-value { font-size: 28px; font-weight: 700; margin-top: 6px; }
+    .stat-card .stat-meta  { font-size: 12px; color: var(--muted); margin-top: 4px; }
+
+    /* ── Tables ─────────────────────────────────────── */
+    .table-wrap { overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td {
+      text-align: left;
+      padding: 12px 14px;
+      border-bottom: 1px solid var(--border);
+      font-size: 13px;
+    }
+    th { color: var(--muted); font-weight: 500; font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em; }
+    tr:hover td { background: var(--card-2); }
+    .pill {
+      display: inline-block; padding: 3px 10px;
+      border-radius: 999px; font-size: 12px; font-weight: 500;
+    }
+    .pill-success { background: rgba(16, 185, 129, 0.15); color: var(--success); }
+    .pill-danger  { background: rgba(239, 68, 68, 0.15);  color: var(--danger); }
+    .pill-muted   { background: rgba(156, 163, 175, 0.15); color: var(--muted); }
+
+    /* ── Toast ──────────────────────────────────────── */
+    #toast-container {
+      position: fixed;
+      top: 20px; right: 20px;
+      display: flex; flex-direction: column; gap: 10px;
+      z-index: 1000;
+      max-width: 360px;
+    }
+    .toast {
+      padding: 12px 18px;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      box-shadow: var(--shadow);
+      font-size: 14px;
+      animation: slide-in 0.25s ease-out;
+    }
+    .toast.success { border-left: 3px solid var(--success); }
+    .toast.error   { border-left: 3px solid var(--danger); }
+    .toast.info    { border-left: 3px solid var(--primary); }
+    @keyframes slide-in {
+      from { transform: translateX(100%); opacity: 0; }
+      to   { transform: translateX(0); opacity: 1; }
+    }
+
+    /* ── Misc ───────────────────────────────────────── */
+    .empty-state {
+      padding: 40px 20px;
+      text-align: center;
+      color: var(--muted);
+    }
+    .empty-state-icon { font-size: 36px; margin-bottom: 12px; }
+
+    .spinner {
+      width: 18px; height: 18px;
+      border: 2px solid var(--border);
+      border-top-color: var(--primary);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── Responsive ────────────────────────────────── */
+    @media (max-width: 800px) {
+      #view-dashboard {
+        grid-template-columns: 1fr;
+        grid-template-areas:
+          "nav"
+          "side"
+          "main";
+      }
+      .sidebar {
+        display: flex; overflow-x: auto;
+        padding: 8px;
+        border-right: none;
+        border-bottom: 1px solid var(--border);
+      }
+      .nav-item { white-space: nowrap; }
+      .nav-item.active { box-shadow: inset 0 -3px 0 var(--primary); }
+    }
   </style>
 </head>
 <body>
 
-<!-- Login Screen -->
-<div id="login-screen">
-  <div class="login-box">
-    <h2>🔒 Surveillance Login</h2>
-    <input type="text"     id="username" placeholder="Username"/>
-    <input type="password" id="password" placeholder="Password"/>
-    <button onclick="login()">Login</button>
-    <p id="error-msg"></p>
+<!-- ════════════════ LANDING ════════════════ -->
+<div id="view-landing">
+  <div class="landing-inner">
+    <div class="brand">
+      <span class="brand-dot"></span>
+      Agent Eye is live
+    </div>
+    <h1 class="hero-title">
+      AI Surveillance<br/><span>for everyone.</span>
+    </h1>
+    <p class="hero-sub">
+      Privacy-first face detection running on your own machine.
+      Real-time alerts to your Telegram. No cameras in the cloud.
+    </p>
+    <div class="hero-cta">
+      <button class="btn btn-primary" onclick="show('signup')">Get started — it's free</button>
+      <button class="btn btn-ghost"   onclick="show('login')">I already have an account</button>
+    </div>
+
+    <div class="features">
+      <div class="feature">
+        <div class="feature-icon">🔒</div>
+        <h3>Privacy by design</h3>
+        <p>Photos never leave your machine. The cloud only sees metadata.</p>
+      </div>
+      <div class="feature">
+        <div class="feature-icon">⚡</div>
+        <h3>Real-time alerts</h3>
+        <p>Get a Telegram message the moment an unknown face is detected.</p>
+      </div>
+      <div class="feature">
+        <div class="feature-icon">🌐</div>
+        <h3>Multi-tenant</h3>
+        <p>Your cameras, your data. Tenant-isolated from the ground up.</p>
+      </div>
+    </div>
   </div>
 </div>
 
-<!-- Dashboard -->
-<div id="dashboard">
-  <div class="navbar">
-    <h1>🎥 Smart Surveillance</h1>
-    <div style="display:flex;gap:10px;align-items:center;">
-      <span id="user-label" style="color:#aaa;font-size:13px;"></span>
-      <button onclick="generateReport()">📄 Report</button>
-      <button onclick="logout()">Logout</button>
-    </div>
-  </div>
-
-  <div class="container">
-    <!-- Stats -->
-    <div class="cards">
-      <div class="card">
-        <h2 id="total-count">0</h2>
-        <p>Total Detections</p>
+<!-- ════════════════ SIGNUP ════════════════ -->
+<div id="view-signup" class="hidden">
+  <div class="auth-card">
+    <h2>Create your account</h2>
+    <p class="subtitle">Free forever for personal use. The first account becomes the admin.</p>
+    <form onsubmit="handleSignup(event)">
+      <div class="field">
+        <label>Username *</label>
+        <input class="input" name="username" minlength="3" maxlength="80" required/>
       </div>
-      <div class="card">
-        <h2 id="intruder-count" style="color:#e74c3c;">0</h2>
-        <p>Intruder Alerts</p>
+      <div class="field">
+        <label>Email (optional)</label>
+        <input class="input" name="email" type="email"/>
       </div>
-      <div class="card">
-        <h2 id="face-count" style="color:#2ecc71;">0</h2>
-        <p>Known Faces</p>
+      <div class="field">
+        <label>Password *</label>
+        <input class="input" name="password" type="password" minlength="6" required/>
       </div>
-    </div>
-
-    <!-- Detection Logs -->
-    <div class="section">
-      <h3>Detection Logs</h3>
-      <table>
-        <thead>
-          <tr>
-            <th>ID</th>
-            <th>Camera</th>
-            <th>Type</th>
-            <th>Label</th>
-            <th>Timestamp</th>
-            <th>Snapshot</th>
-          </tr>
-        </thead>
-        <tbody id="detections-table"></tbody>
-      </table>
-    </div>
-
-    <!-- Known Faces -->
-    <div class="section">
-      <h3>Known Faces</h3>
-      <div style="margin-bottom:12px;display:flex;gap:10px;align-items:center;">
-        <input type="text" id="face-name" placeholder="Person name"
-          style="padding:8px 12px;border-radius:6px;border:1px solid #444;
-                 background:#1a1a1a;color:#eee;font-size:13px;"/>
-        <input type="file" id="face-file" accept="image/*"
-          style="font-size:13px;color:#aaa;"/>
-        <button class="btn btn-green" onclick="registerFace()">Register Face</button>
+      <div class="field">
+        <label>Full name (optional)</label>
+        <input class="input" name="full_name"/>
       </div>
-      <div id="known-faces-list" style="display:flex;gap:12px;flex-wrap:wrap;"></div>
-    </div>
+      <div class="field">
+        <label>Company (optional)</label>
+        <input class="input" name="company"/>
+      </div>
+      <button class="btn btn-primary btn-block" type="submit" id="signup-btn">
+        Create account
+      </button>
+    </form>
+    <p class="footer-link">
+      Already have an account?
+      <a href="#" onclick="show('login'); return false;">Log in</a>
+    </p>
+    <p class="footer-link" style="margin-top: 8px;">
+      <a href="#" onclick="show('landing'); return false;">← Back to home</a>
+    </p>
   </div>
 </div>
+
+<!-- ════════════════ LOGIN ════════════════ -->
+<div id="view-login" class="hidden">
+  <div class="auth-card">
+    <h2>Welcome back</h2>
+    <p class="subtitle">Log in to your Agent Eye dashboard.</p>
+    <form onsubmit="handleLogin(event)">
+      <div class="field">
+        <label>Username</label>
+        <input class="input" name="username" required autocomplete="username"/>
+      </div>
+      <div class="field">
+        <label>Password</label>
+        <input class="input" name="password" type="password" required autocomplete="current-password"/>
+      </div>
+      <button class="btn btn-primary btn-block" type="submit" id="login-btn">
+        Log in
+      </button>
+    </form>
+    <p class="footer-link">
+      New here?
+      <a href="#" onclick="show('signup'); return false;">Create an account</a>
+    </p>
+    <p class="footer-link" style="margin-top: 8px;">
+      <a href="#" onclick="show('landing'); return false;">← Back to home</a>
+    </p>
+  </div>
+</div>
+
+<!-- ════════════════ DASHBOARD ════════════════ -->
+<div id="view-dashboard" class="hidden">
+
+  <nav class="topnav">
+    <div class="logo">
+      <div class="logo-mark">👁</div>
+      Agent Eye
+    </div>
+    <div class="row">
+      <div class="user-chip">
+        <div class="user-avatar" id="user-avatar">U</div>
+        <span id="user-name">user</span>
+        <span id="user-role" class="pill pill-muted" style="font-size:10px;">customer</span>
+      </div>
+      <button class="btn btn-ghost btn-sm" onclick="logout()">Log out</button>
+    </div>
+  </nav>
+
+  <aside class="sidebar">
+    <div class="nav-item active" data-section="home"       onclick="navTo('home')">
+      <span class="nav-icon">📊</span> Dashboard
+    </div>
+    <div class="nav-item"        data-section="settings"   onclick="navTo('settings')">
+      <span class="nav-icon">⚙️</span> Settings
+    </div>
+    <div class="nav-item"        data-section="agents"     onclick="navTo('agents')">
+      <span class="nav-icon">🤖</span> Agents
+    </div>
+    <div class="nav-item"        data-section="detections" onclick="navTo('detections')">
+      <span class="nav-icon">📷</span> Detections
+    </div>
+    <div class="nav-item"        data-section="reports"    onclick="navTo('reports')">
+      <span class="nav-icon">📄</span> Reports
+    </div>
+  </aside>
+
+  <main class="main">
+
+    <!-- ── Home section ────────────────────────── -->
+    <section id="section-home">
+      <div class="page-head">
+        <div>
+          <h1>Dashboard</h1>
+          <p>Real-time overview of your surveillance activity.</p>
+        </div>
+        <button class="btn btn-ghost btn-sm" onclick="loadAll()">
+          🔄 Refresh
+        </button>
+      </div>
+
+      <div class="stats-grid">
+        <div class="stat-card">
+          <div class="stat-label">Total detections</div>
+          <div class="stat-value" id="stat-total">—</div>
+          <div class="stat-meta">All time</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Today</div>
+          <div class="stat-value" id="stat-today">—</div>
+          <div class="stat-meta">Last 24 hours</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Unknown faces</div>
+          <div class="stat-value" id="stat-unknown">—</div>
+          <div class="stat-meta">Strangers detected</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Active agents</div>
+          <div class="stat-value" id="stat-agents">—</div>
+          <div class="stat-meta">Cameras online</div>
+        </div>
+      </div>
+
+      <div class="card" style="margin-bottom: 24px;">
+        <div class="card-title">Last 7 days</div>
+        <canvas id="weekChart" height="80"></canvas>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Recent detections</div>
+        <div class="table-wrap" id="recent-table">
+          <div class="empty-state">
+            <div class="empty-state-icon">📭</div>
+            <div>No detections yet. Run your local agent to start.</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ── Settings section ────────────────────── -->
+    <section id="section-settings" class="hidden">
+      <div class="page-head">
+        <div>
+          <h1>Settings</h1>
+          <p>Configure your Telegram alerts and camera.</p>
+        </div>
+      </div>
+
+      <div class="card" style="max-width: 600px;">
+        <form onsubmit="handleSaveSettings(event)">
+          <div class="field">
+            <label>Telegram bot token</label>
+            <input class="input" name="telegram_bot_token" placeholder="123456:ABC-DEF..."/>
+            <small style="color: var(--muted); font-size: 12px;">
+              Get from <a href="https://t.me/BotFather" target="_blank">@BotFather</a> on Telegram.
+            </small>
+          </div>
+          <div class="field">
+            <label>Telegram chat ID</label>
+            <input class="input" name="telegram_chat_id" placeholder="5662811833"/>
+            <small style="color: var(--muted); font-size: 12px;">
+              Your personal chat ID or a group ID where alerts should be sent.
+            </small>
+          </div>
+          <div class="field">
+            <label>Camera source</label>
+            <input class="input" name="camera_source" placeholder="0  or  rtsp://user:pass@cam/stream"/>
+            <small style="color: var(--muted); font-size: 12px;">
+              0 = default webcam. Use an RTSP URL for IP cameras.
+            </small>
+          </div>
+          <div class="field">
+            <label>Snapshot folder (on your PC)</label>
+            <input class="input" name="snapshot_dir" placeholder="snapshots"/>
+          </div>
+          <div class="row" style="gap: 18px;">
+            <label class="row" style="gap: 6px; cursor: pointer;">
+              <input type="checkbox" name="alert_on_unknown" checked/>
+              <span style="font-size: 14px;">Alert on unknown face</span>
+            </label>
+            <label class="row" style="gap: 6px; cursor: pointer;">
+              <input type="checkbox" name="alert_on_known"/>
+              <span style="font-size: 14px;">Alert on known face</span>
+            </label>
+          </div>
+          <div class="field">
+            <label>Detection cooldown (seconds)</label>
+            <input class="input" name="detection_cooldown" type="number" min="0" max="600" value="10"/>
+            <small style="color: var(--muted); font-size: 12px;">
+              Minimum gap between alerts to avoid spam.
+            </small>
+          </div>
+          <div class="row" style="margin-top: 8px;">
+            <button class="btn btn-primary" type="submit" id="save-settings-btn">Save settings</button>
+            <button class="btn btn-ghost" type="button" onclick="testTelegram()">Send test message</button>
+          </div>
+        </form>
+      </div>
+    </section>
+
+    <!-- ── Agents section ─────────────────────── -->
+    <section id="section-agents" class="hidden">
+      <div class="page-head">
+        <div>
+          <h1>Agents</h1>
+          <p>Each agent is a detection camera running on your PC.</p>
+        </div>
+      </div>
+
+      <div class="card" style="margin-bottom: 18px;">
+        <div class="card-title">Register a new agent</div>
+        <p style="color: var(--muted); font-size: 13px; margin-bottom: 14px;">
+          Click below to register this browser as an agent. Then download the Python
+          script, run it on your PC, and it will push detections to this dashboard.
+        </p>
+        <div class="row">
+          <button class="btn btn-primary" onclick="registerAgent()">Register this device</button>
+          <button class="btn btn-ghost"  onclick="downloadAgent()">⬇ Download agent script</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Your agents</div>
+        <div class="table-wrap" id="agents-table">
+          <div class="empty-state">
+            <div class="empty-state-icon">🤖</div>
+            <div>No agents registered yet.</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ── Detections section ─────────────────── -->
+    <section id="section-detections" class="hidden">
+      <div class="page-head">
+        <div>
+          <h1>Detections</h1>
+          <p>Every face detected by your agents.</p>
+        </div>
+        <div class="row">
+          <select class="input" id="detection-filter" onchange="loadDetections()" style="width: auto;">
+            <option value="">All labels</option>
+            <option value="Unknown">Unknown only</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="table-wrap" id="detections-table">
+          <div class="empty-state">
+            <div class="empty-state-icon">📭</div>
+            <div>No detections yet.</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ── Reports section ────────────────────── -->
+    <section id="section-reports" class="hidden">
+      <div class="page-head">
+        <div>
+          <h1>Reports</h1>
+          <p>Export your detection history as a PDF.</p>
+        </div>
+      </div>
+
+      <div class="card" style="max-width: 540px;">
+        <div class="card-title">Generate PDF report</div>
+        <p style="color: var(--muted); font-size: 13px; margin-bottom: 16px;">
+          Downloads a PDF containing your last 500 detections with timestamps,
+          labels, and camera sources.
+        </p>
+        <button class="btn btn-primary" onclick="downloadReport()">
+          ⬇ Download PDF report
+        </button>
+      </div>
+    </section>
+
+  </main>
+</div>
+
+<!-- ── Toast container ─────────────────────── -->
+<div id="toast-container"></div>
 
 <script>
-  const API = "http://localhost:8000"
-  let token = localStorage.getItem("token") || ""
+/* ════════════════════════════════════════════════
+   Agent Eye — frontend controller
+   ════════════════════════════════════════════════ */
 
-  async function login() {
-    const username = document.getElementById("username").value
-    const password = document.getElementById("password").value
-    const form     = new URLSearchParams()
-    form.append("username", username)
-    form.append("password", password)
+// ── API base ──────────────────────────────────
+const API = window.location.origin;
+const TOKEN_KEY = "agent_eye_token";
+const USER_KEY  = "agent_eye_user";
 
-    const res = await fetch(`${API}/auth/login`, {
-      method : "POST",
+// ── Helpers ───────────────────────────────────
+const $ = sel => document.querySelector(sel);
+const $$ = sel => Array.from(document.querySelectorAll(sel));
+
+function toast(msg, kind = "info") {
+  const el = document.createElement("div");
+  el.className = `toast ${kind}`;
+  el.textContent = msg;
+  $("#toast-container").appendChild(el);
+  setTimeout(() => el.remove(), 3500);
+}
+
+function fmtTime(iso) {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  return d.toLocaleString();
+}
+
+function fmtRel(iso) {
+  if (!iso) return "never";
+  const diff = Date.now() - new Date(iso).getTime();
+  const sec = Math.floor(diff / 1000);
+  if (sec < 60)    return `${sec}s ago`;
+  if (sec < 3600)  return `${Math.floor(sec/60)}m ago`;
+  if (sec < 86400) return `${Math.floor(sec/3600)}h ago`;
+  return `${Math.floor(sec/86400)}d ago`;
+}
+
+// ── API client ────────────────────────────────
+async function api(path, opts = {}) {
+  const token = localStorage.getItem(TOKEN_KEY);
+  const headers = { "Content-Type": "application/json", ...(opts.headers || {}) };
+  if (token) headers["Authorization"] = `Bearer ${token}`;
+  const r = await fetch(API + path, { ...opts, headers });
+  if (!r.ok) {
+    let msg = `HTTP ${r.status}`;
+    try { const j = await r.json(); msg = j.detail || msg; } catch {}
+    throw new Error(msg);
+  }
+  if (r.status === 204) return null;
+  return r.json();
+}
+
+// ── View routing ──────────────────────────────
+function show(view) {
+  ["landing","signup","login","dashboard"].forEach(v => {
+    $("#view-" + v).classList.toggle("hidden", v !== view);
+  });
+  if (view === "dashboard") loadAll();
+}
+
+function navTo(section) {
+  $$(".nav-item").forEach(n => n.classList.toggle("active", n.dataset.section === section));
+  ["home","settings","agents","detections","reports"].forEach(s => {
+    $("#section-" + s).classList.toggle("hidden", s !== section);
+  });
+  if (section === "agents")     loadAgents();
+  if (section === "detections") loadDetections();
+}
+
+// ── Auth ──────────────────────────────────────
+function logout() {
+  localStorage.removeItem(TOKEN_KEY);
+  localStorage.removeItem(USER_KEY);
+  show("landing");
+  toast("Logged out", "info");
+}
+
+async function handleSignup(e) {
+  e.preventDefault();
+  const btn = $("#signup-btn");
+  btn.disabled = true; btn.textContent = "Creating…";
+  const fd = new FormData(e.target);
+  const body = {};
+  fd.forEach((v, k) => { if (v) body[k] = v; });
+  try {
+    const r = await api("/auth/signup", { method: "POST", body: JSON.stringify(body) });
+    localStorage.setItem(TOKEN_KEY, r.access_token);
+    localStorage.setItem(USER_KEY,  JSON.stringify({ id: r.user_id, username: r.username, role: r.role }));
+    toast(`Welcome, ${r.username}!`, "success");
+    enterDashboard();
+  } catch (err) {
+    toast(err.message, "error");
+  } finally {
+    btn.disabled = false; btn.textContent = "Create account";
+  }
+}
+
+async function handleLogin(e) {
+  e.preventDefault();
+  const btn = $("#login-btn");
+  btn.disabled = true; btn.textContent = "Logging in…";
+  const fd = new FormData(e.target);
+  const body = new URLSearchParams();
+  fd.forEach((v, k) => body.append(k, v));
+  try {
+    const r = await fetch(API + "/auth/login", {
+      method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body   : form
-    })
-    if (res.ok) {
-      const data = await res.json()
-      token = data.access_token
-      localStorage.setItem("token", token)
-      showDashboard()
-    } else {
-      document.getElementById("error-msg").textContent = "Invalid credentials"
+      body,
+    });
+    if (!r.ok) {
+      const j = await r.json().catch(() => ({}));
+      throw new Error(j.detail || `HTTP ${r.status}`);
+    }
+    const data = await r.json();
+    localStorage.setItem(TOKEN_KEY, data.access_token);
+    localStorage.setItem(USER_KEY,  JSON.stringify({ id: data.user_id, username: data.username, role: data.role }));
+    toast(`Welcome back, ${data.username}!`, "success");
+    enterDashboard();
+  } catch (err) {
+    toast(err.message, "error");
+  } finally {
+    btn.disabled = false; btn.textContent = "Log in";
+  }
+}
+
+function enterDashboard() {
+  const u = JSON.parse(localStorage.getItem(USER_KEY) || "{}");
+  $("#user-name").textContent  = u.username || "user";
+  $("#user-avatar").textContent = (u.username || "U")[0].toUpperCase();
+  $("#user-role").textContent  = u.role || "customer";
+  $("#user-role").className    = "pill " + (u.role === "admin" ? "pill-success" : "pill-muted");
+  show("dashboard");
+}
+
+// ── Home data ─────────────────────────────────
+let weekChart = null;
+
+async function loadAll() {
+  await Promise.all([loadStats(), loadRecent()]);
+}
+
+async function loadStats() {
+  try {
+    const s = await api("/me/stats");
+    $("#stat-total").textContent   = s.total_detections ?? 0;
+    $("#stat-today").textContent   = s.today_detections ?? 0;
+    $("#stat-unknown").textContent = s.unknown_detections ?? 0;
+    $("#stat-agents").textContent  = s.active_agents ?? 0;
+
+    // Chart
+    const labels = (s.last_7_days || []).map(d => d.date.slice(5));
+    const data   = (s.last_7_days || []).map(d => d.count);
+    const ctx = $("#weekChart").getContext("2d");
+    if (weekChart) weekChart.destroy();
+    weekChart = new Chart(ctx, {
+      type: "bar",
+      data: {
+        labels,
+        datasets: [{
+          label: "Detections",
+          data,
+          backgroundColor: "rgba(91,140,255,0.7)",
+          borderRadius: 6,
+        }],
+      },
+      options: {
+        plugins: { legend: { display: false } },
+        scales: {
+          x: { ticks: { color: "#9ca3af" }, grid: { color: "rgba(255,255,255,0.05)" } },
+          y: { ticks: { color: "#9ca3af" }, grid: { color: "rgba(255,255,255,0.05)" }, beginAtZero: true },
+        },
+      },
+    });
+  } catch (e) {
+    toast("Failed to load stats: " + e.message, "error");
+  }
+}
+
+async function loadRecent() {
+  try {
+    const rows = await api("/me/detections?limit=10");
+    const el = $("#recent-table");
+    if (!rows.length) {
+      el.innerHTML = `<div class="empty-state"><div class="empty-state-icon">📭</div><div>No detections yet. Run your local agent to start.</div></div>`;
+      return;
+    }
+    el.innerHTML = `
+      <table>
+        <thead><tr><th>Time</th><th>Label</th><th>Confidence</th><th>Camera</th></tr></thead>
+        <tbody>${rows.map(r => `
+          <tr>
+            <td>${fmtTime(r.timestamp)}</td>
+            <td>${r.label === "Unknown" ? '<span class="pill pill-danger">Unknown</span>' : `<span class="pill pill-success">${r.label}</span>`}</td>
+            <td>${r.confidence || 0}%</td>
+            <td>${r.camera_source || "—"}</td>
+          </tr>`).join("")}
+        </tbody>
+      </table>`;
+  } catch (e) { /* silent */ }
+}
+
+// ── Settings ──────────────────────────────────
+async function loadSettings() {
+  try {
+    const s = await api("/me/settings");
+    const f = $("#section-settings form");
+    f.telegram_bot_token.value = s.telegram_bot_token || "";
+    f.telegram_chat_id.value   = s.telegram_chat_id   || "";
+    f.camera_source.value      = s.camera_source      || "";
+    f.snapshot_dir.value       = s.snapshot_dir       || "snapshots";
+    f.alert_on_unknown.checked = !!s.alert_on_unknown;
+    f.alert_on_known.checked   = !!s.alert_on_known;
+    f.detection_cooldown.value = s.detection_cooldown ?? 10;
+  } catch (e) { toast("Failed to load settings: " + e.message, "error"); }
+}
+
+async function handleSaveSettings(e) {
+  e.preventDefault();
+  const btn = $("#save-settings-btn");
+  btn.disabled = true; btn.textContent = "Saving…";
+  const f = e.target;
+  const body = {
+    telegram_bot_token: f.telegram_bot_token.value || null,
+    telegram_chat_id:   f.telegram_chat_id.value   || null,
+    camera_source:      f.camera_source.value      || null,
+    snapshot_dir:       f.snapshot_dir.value       || null,
+    alert_on_unknown:   f.alert_on_unknown.checked,
+    alert_on_known:     f.alert_on_known.checked,
+    detection_cooldown: parseInt(f.detection_cooldown.value, 10),
+  };
+  try {
+    await api("/me/settings", { method: "PUT", body: JSON.stringify(body) });
+    toast("Settings saved", "success");
+  } catch (e) {
+    toast("Save failed: " + e.message, "error");
+  } finally {
+    btn.disabled = false; btn.textContent = "Save settings";
+  }
+}
+
+async function testTelegram() {
+  try {
+    const r = await api("/me/settings/test-telegram", { method: "POST" });
+    if (r.ok) toast("Test message sent! Check your Telegram.", "success");
+    else      toast("Telegram failed: " + (r.error || "unknown"), "error");
+  } catch (e) { toast("Test failed: " + e.message, "error"); }
+}
+
+// ── Agents ────────────────────────────────────
+async function loadAgents() {
+  try {
+    const rows = await api("/me/agents");
+    const el = $("#agents-table");
+    if (!rows.length) {
+      el.innerHTML = `<div class="empty-state"><div class="empty-state-icon">🤖</div><div>No agents registered yet. Click "Register this device" above.</div></div>`;
+      return;
+    }
+    el.innerHTML = `
+      <table>
+        <thead><tr><th>Machine</th><th>Camera</th><th>Status</th><th>Events sent</th><th>Last seen</th><th>Created</th></tr></thead>
+        <tbody>${rows.map(a => `
+          <tr>
+            <td><strong>${a.machine_name || a.machine_id}</strong><br/><span style="color:var(--muted);font-size:11px;">${a.machine_id}</span></td>
+            <td>${a.camera_source || "—"}</td>
+            <td>${statusPill(a.status)}</td>
+            <td>${a.events_sent ?? 0}</td>
+            <td>${fmtRel(a.last_seen_at)}</td>
+            <td>${fmtTime(a.created_at)}</td>
+          </tr>`).join("")}
+        </tbody>
+      </table>`;
+  } catch (e) { toast("Failed to load agents: " + e.message, "error"); }
+}
+
+function statusPill(s) {
+  if (s === "online")  return '<span class="pill pill-success">online</span>';
+  if (s === "offline") return '<span class="pill pill-muted">offline</span>';
+  return `<span class="pill pill-danger">${s || "unknown"}</span>`;
+}
+
+async function registerAgent() {
+  const machineId = "web-" + Math.random().toString(36).slice(2, 10);
+  try {
+    const r = await api("/agent/register", {
+      method: "POST",
+      body: JSON.stringify({
+        machine_id: machineId,
+        machine_name: navigator.userAgent.split(") ")[0].split("(")[1] || "Browser",
+        camera_source: "browser",
+      }),
+    });
+    toast(`Agent registered (token saved).`, "success");
+    loadAgents();
+  } catch (e) { toast("Register failed: " + e.message, "error"); }
+}
+
+async function downloadAgent() {
+  try {
+    const token = localStorage.getItem(TOKEN_KEY);
+    const r = await fetch(API + "/me/agent-script", {
+      headers: { "Authorization": `Bearer ${token}` },
+    });
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    const blob = await r.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = "agent_eye_local.py";
+    a.click();
+    URL.revokeObjectURL(url);
+    toast("Script downloaded — run `python agent_eye_local.py` on your PC.", "success");
+  } catch (e) { toast("Download failed: " + e.message, "error"); }
+}
+
+// ── Detections ────────────────────────────────
+async function loadDetections() {
+  try {
+    const label = $("#detection-filter").value;
+    const qs    = label ? `?label=${encodeURIComponent(label)}` : "";
+    const rows  = await api("/me/detections" + qs);
+    const el    = $("#detections-table");
+    if (!rows.length) {
+      el.innerHTML = `<div class="empty-state"><div class="empty-state-icon">📭</div><div>No detections found.</div></div>`;
+      return;
+    }
+    el.innerHTML = `
+      <table>
+        <thead><tr><th>Time (UTC)</th><th>Label</th><th>Confidence</th><th>Camera</th><th>Snapshot</th></tr></thead>
+        <tbody>${rows.map(r => `
+          <tr>
+            <td>${fmtTime(r.timestamp)}</td>
+            <td>${r.label === "Unknown" ? '<span class="pill pill-danger">Unknown</span>' : `<span class="pill pill-success">${r.label}</span>`}</td>
+            <td>${r.confidence || 0}%</td>
+            <td>${r.camera_source || "—"}</td>
+            <td style="font-family:monospace;font-size:11px;color:var(--muted);">${r.snapshot_path || "—"}</td>
+          </tr>`).join("")}
+        </tbody>
+      </table>`;
+  } catch (e) { toast("Failed to load detections: " + e.message, "error"); }
+}
+
+// ── Reports ───────────────────────────────────
+async function downloadReport() {
+  try {
+    const token = localStorage.getItem(TOKEN_KEY);
+    const r = await fetch(API + "/reports/pdf", {
+      headers: { "Authorization": `Bearer ${token}` },
+    });
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    const blob = await r.blob();
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement("a");
+    a.href = url;
+    a.download = `agent_eye_report_${new Date().toISOString().slice(0,10)}.pdf`;
+    a.click();
+    URL.revokeObjectURL(url);
+    toast("Report downloaded", "success");
+  } catch (e) { toast("Download failed: " + e.message, "error"); }
+}
+
+// ── Boot ──────────────────────────────────────
+(async function init() {
+  const token = localStorage.getItem(TOKEN_KEY);
+  if (token) {
+    try {
+      const me = await api("/auth/me");
+      localStorage.setItem(USER_KEY, JSON.stringify({
+        id: me.id, username: me.username, role: me.role,
+      }));
+      enterDashboard();
+      return;
+    } catch {
+      localStorage.removeItem(TOKEN_KEY);
     }
   }
-
-  function logout() {
-    localStorage.removeItem("token")
-    token = ""
-    document.getElementById("login-screen").style.display = "flex"
-    document.getElementById("dashboard").style.display    = "none"
-  }
-
-  async function showDashboard() {
-    document.getElementById("login-screen").style.display = "none"
-    document.getElementById("dashboard").style.display    = "block"
-    const me = await fetch(`${API}/auth/me`, {
-      headers: { Authorization: `Bearer ${token}` }
-    }).then(r => r.json())
-    document.getElementById("user-label").textContent = `👤 ${me.username} (${me.role})`
-    loadDetections()
-    loadKnownFaces()
-  }
-
-  async function loadDetections() {
-    const res  = await fetch(`${API}/detections/`, {
-      headers: { Authorization: `Bearer ${token}` }
-    })
-    const data = await res.json()
-    const tbody = document.getElementById("detections-table")
-    tbody.innerHTML = ""
-    let intruders = 0
-    data.forEach(d => {
-      if (d.type === "intruder") intruders++
-      const snap = d.snapshot_path
-        ? `<a href="${API}/detections/snapshot/${d.snapshot_path.split(/[\\/]/).pop()}"
-              target="_blank" style="color:#3498db;">View</a>`
-        : "-"
-      tbody.innerHTML += `
-        <tr>
-          <td>${d.id}</td>
-          <td>Cam ${d.camera_id}</td>
-          <td><span class="badge ${d.type}">${d.type}</span></td>
-          <td>${d.label || "-"}</td>
-          <td>${d.timestamp}</td>
-          <td>${snap}</td>
-        </tr>`
-    })
-    document.getElementById("total-count").textContent    = data.length
-    document.getElementById("intruder-count").textContent = intruders
-  }
-
-  async function loadKnownFaces() {
-    const res  = await fetch(`${API}/detections/known-faces`, {
-      headers: { Authorization: `Bearer ${token}` }
-    })
-    const data = await res.json()
-    document.getElementById("face-count").textContent = data.length
-    const list = document.getElementById("known-faces-list")
-    list.innerHTML = ""
-    data.forEach(f => {
-      list.innerHTML += `
-        <div style="background:#2a2a2a;padding:12px;border-radius:8px;
-                    border:1px solid #333;text-align:center;min-width:120px;">
-          <p style="font-size:13px;margin-bottom:8px;">${f.name}</p>
-          <button class="btn btn-red" style="font-size:11px;padding:4px 10px;"
-            onclick="deleteFace('${f.name}')">Remove</button>
-        </div>`
-    })
-  }
-
-  async function registerFace() {
-    const name = document.getElementById("face-name").value
-    const file = document.getElementById("face-file").files[0]
-    if (!name || !file) return alert("Enter name and select image")
-    const form = new FormData()
-    form.append("name", name)
-    form.append("file", file)
-    const res = await fetch(`${API}/detections/known-faces`, {
-      method : "POST",
-      headers: { Authorization: `Bearer ${token}` },
-      body   : form
-    })
-    if (res.ok) { alert("Face registered!"); loadKnownFaces() }
-    else alert("Failed to register face")
-  }
-
-  async function deleteFace(name) {
-    if (!confirm(`Remove ${name}?`)) return
-    await fetch(`${API}/detections/known-faces/${name}`, {
-      method : "DELETE",
-      headers: { Authorization: `Bearer ${token}` }
-    })
-    loadKnownFaces()
-  }
-
-  async function generateReport() {
-    window.open(`${API}/reports/generate?token=${token}`, "_blank")
-  }
-
-  if (token) showDashboard()
+  show("landing");
+})();
 </script>
 </body>
 </html>
