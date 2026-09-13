@@ -523,6 +523,9 @@
     <div class="nav-item"        data-section="agents"     onclick="navTo('agents')">
       <span class="nav-icon">🤖</span> Agents
     </div>
+    <div class="nav-item"        data-section="snapshots"  onclick="navTo('snapshots')">
+      <span class="nav-icon">🖼️</span> Snapshots
+    </div>
     <div class="nav-item"        data-section="detections" onclick="navTo('detections')">
       <span class="nav-icon">📷</span> Detections
     </div>
@@ -637,6 +640,20 @@
               Minimum gap between alerts to avoid spam.
             </small>
           </div>
+          <div class="card" style="background: rgba(91,140,255,0.08); border-color: rgba(91,140,255,0.3); margin-top: 14px;">
+            <label class="row" style="gap: 10px; cursor: pointer; align-items: flex-start;">
+              <input type="checkbox" name="upload_snapshots" style="margin-top: 4px;"/>
+              <div>
+                <div style="font-size: 14px; font-weight: 600;">📸 Upload snapshots to cloud</div>
+                <div style="font-size: 12px; color: var(--muted); margin-top: 4px;">
+                  Off by default for privacy — photos stay on your PC.
+                  When on, snapshots also get uploaded so you can view them
+                  in the <a href="#" onclick="navTo('snapshots'); return false;">Snapshots</a> tab
+                  without Telegram.
+                </div>
+              </div>
+            </label>
+          </div>
           <div class="row" style="margin-top: 8px;">
             <button class="btn btn-primary" type="submit" id="save-settings-btn">Save settings</button>
             <button class="btn btn-ghost" type="button" onclick="testTelegram()">Send test message</button>
@@ -662,6 +679,20 @@
             <div>No cameras yet. Click "+ Add camera" to register one.</div>
           </div>
         </div>
+      </div>
+    </section>
+
+    <!-- ── Snapshots section ─────────────────── -->
+    <section id="section-snapshots" class="hidden">
+      <div class="page-head">
+        <div>
+          <h1>Snapshots</h1>
+          <p>Photos from your cameras, grouped by date. Requires cloud upload to be enabled in Settings.</p>
+        </div>
+      </div>
+
+      <div id="snapshots-dates-wrap" class="col" style="gap: 12px;">
+        <!-- Dates are rendered here as collapsible cards -->
       </div>
     </section>
 
@@ -769,6 +800,19 @@
   </div>
 </div>
 
+<!-- ════════════════ SNAPSHOT VIEWER MODAL ════════════════ -->
+<div id="modal-snapshot" class="hidden" style="position:fixed;inset:0;background:rgba(0,0,0,0.85);display:flex;align-items:center;justify-content:center;z-index:100;padding:20px;"
+     onclick="if(event.target===this) closeModal('modal-snapshot')">
+  <div class="card" style="width:100%;max-width:780px;background:#111;padding:0;overflow:hidden;">
+    <div class="row" style="justify-content:space-between;padding:12px 18px;border-bottom:1px solid var(--border);">
+      <div id="snapshot-title" style="font-weight:600;">Snapshot</div>
+      <button class="btn btn-ghost btn-sm" onclick="closeModal('modal-snapshot')">✕ Close</button>
+    </div>
+    <img id="snapshot-image" style="display:block;width:100%;height:auto;max-height:80vh;object-fit:contain;background:#000;" alt="snapshot"/>
+    <div id="snapshot-meta" style="padding:12px 18px;font-size:13px;color:var(--muted);border-top:1px solid var(--border);"></div>
+  </div>
+</div>
+
 <script>
 /* ════════════════════════════════════════════════
    Agent Eye — frontend controller
@@ -832,10 +876,11 @@ function show(view) {
 
 function navTo(section) {
   $$(".nav-item").forEach(n => n.classList.toggle("active", n.dataset.section === section));
-  ["home","settings","agents","detections","reports"].forEach(s => {
+  ["home","settings","agents","snapshots","detections","reports"].forEach(s => {
     $("#section-" + s).classList.toggle("hidden", s !== section);
   });
   if (section === "agents")     loadAgents();
+  if (section === "snapshots")  loadSnapshotDates();
   if (section === "detections") loadDetections();
 }
 
@@ -1032,6 +1077,7 @@ async function loadSettings() {
     f.alert_on_unknown.checked = !!s.alert_on_unknown;
     f.alert_on_known.checked   = !!s.alert_on_known;
     f.detection_cooldown.value = s.detection_cooldown ?? 10;
+    f.upload_snapshots.checked = !!s.upload_snapshots;
   } catch (e) { toast("Failed to load settings: " + e.message, "error"); }
 }
 
@@ -1048,10 +1094,13 @@ async function handleSaveSettings(e) {
     alert_on_unknown:   f.alert_on_unknown.checked,
     alert_on_known:     f.alert_on_known.checked,
     detection_cooldown: parseInt(f.detection_cooldown.value, 10),
+    upload_snapshots:   f.upload_snapshots.checked,
   };
   try {
     await api("/me/settings", { method: "PUT", body: JSON.stringify(body) });
-    toast("Settings saved", "success");
+    toast(f.upload_snapshots.checked
+          ? "Settings saved — future snapshots will upload to cloud"
+          : "Settings saved", "success");
   } catch (e) {
     toast("Save failed: " + e.message, "error");
   } finally {
@@ -1253,7 +1302,129 @@ async function downloadReport() {
   } catch (e) { toast("Download failed: " + e.message, "error"); }
 }
 
-// ── Boot ──────────────────────────────────────
+// ── Snapshots (cloud-uploaded photos) ─────────
+async function loadSnapshotDates() {
+  const wrap = $("#snapshots-dates-wrap");
+  try {
+    const dates = await api("/me/snapshots/dates");
+    if (!dates.length) {
+      wrap.innerHTML = `
+        <div class="card">
+          <div class="empty-state">
+            <div class="empty-state-icon">🖼️</div>
+            <div style="margin-bottom: 12px;">No cloud snapshots yet.</div>
+            <div style="font-size: 13px; color: var(--muted); max-width: 480px; margin: 0 auto;">
+              Turn on <strong>📸 Upload snapshots to cloud</strong> in
+              <a href="#" onclick="navTo('settings'); return false;">Settings</a>,
+              then run your local agent. New detections will appear here, grouped by date.
+            </div>
+          </div>
+        </div>`;
+      return;
+    }
+    // Build a date card for each (most recent first — server already sorts)
+    wrap.innerHTML = dates.map((d, idx) => {
+      const label = humanDate(d.date);
+      return `
+        <div class="card" data-date="${d.date}">
+          <div class="row" style="justify-content:space-between;cursor:pointer;"
+               onclick="toggleDateGroup('${d.date}')">
+            <div class="row" style="gap:10px;">
+              <span style="font-size:18px;">📅</span>
+              <strong>${label}</strong>
+              <span class="pill pill-muted">${d.count} photo${d.count === 1 ? "" : "s"}</span>
+            </div>
+            <span id="chev-${d.date}" style="transition:transform 0.2s;">▼</span>
+          </div>
+          <div id="grid-${d.date}" class="hidden" style="margin-top:14px;">
+            <div style="color: var(--muted); font-size: 13px;">Loading…</div>
+          </div>
+        </div>`;
+    }).join("");
+  } catch (e) {
+    wrap.innerHTML = `<div class="card"><div class="empty-state">Failed to load: ${e.message}</div></div>`;
+  }
+}
+
+function humanDate(yyyy_mm_dd) {
+  const today    = new Date().toISOString().slice(0, 10);
+  const yesterday= new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+  if (yyyy_mm_dd === today)     return "Today";
+  if (yyyy_mm_dd === yesterday) return "Yesterday";
+  const d = new Date(yyyy_mm_dd + "T00:00:00");
+  return d.toLocaleDateString(undefined, { weekday: "long", year: "numeric", month: "short", day: "numeric" });
+}
+
+async function toggleDateGroup(date) {
+  const grid = $("#grid-" + date);
+  const chev = $("#chev-" + date);
+  if (!grid.classList.contains("hidden")) {
+    grid.classList.add("hidden");
+    chev.style.transform = "rotate(0deg)";
+    return;
+  }
+  grid.classList.remove("hidden");
+  chev.style.transform = "rotate(180deg)";
+  grid.innerHTML = `<div style="color: var(--muted); font-size: 13px;">Loading photos…</div>`;
+  try {
+    const snaps = await api("/me/snapshots?date=" + date);
+    if (!snaps.length) {
+      grid.innerHTML = `<div style="color: var(--muted); font-size: 13px;">No photos.</div>`;
+      return;
+    }
+    grid.innerHTML = `
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:10px;">
+        ${snaps.map(s => `
+          <div class="card" style="padding:0;overflow:hidden;cursor:pointer;background:var(--card-2);"
+               onclick="openSnapshot(${s.id}, '${date}')">
+            <img src="${API}${s.image_url}" alt="${s.label}"
+                 style="display:block;width:100%;height:140px;object-fit:cover;background:#000;"
+                 loading="lazy"/>
+            <div style="padding:8px 10px;font-size:12px;">
+              <div style="font-weight:600;">${s.label === "Unknown"
+                  ? '<span class="pill pill-danger">Unknown</span>'
+                  : `<span class="pill pill-success">${s.label}</span>`}</div>
+              <div style="color:var(--muted);margin-top:4px;">${formatTime(s.timestamp)}</div>
+            </div>
+          </div>`).join("")}
+      </div>`;
+  } catch (e) {
+    grid.innerHTML = `<div style="color: var(--danger); font-size: 13px;">Failed: ${e.message}</div>`;
+  }
+}
+
+function formatTime(iso) {
+  if (!iso) return "";
+  return new Date(iso).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+}
+
+async function openSnapshot(id, date) {
+  const token = localStorage.getItem(TOKEN_KEY);
+  // We just point <img> at the API URL with the auth header — use fetch+blob instead
+  try {
+    const r = await fetch(API + `/me/snapshots/${id}/image`, {
+      headers: { "Authorization": `Bearer ${token}` },
+    });
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    const blob = await r.blob();
+    const url  = URL.createObjectURL(blob);
+    $("#snapshot-image").src = url;
+    $("#snapshot-image").onload = () => URL.revokeObjectURL(url);
+    // Pull metadata
+    const list = await api("/me/snapshots?date=" + date);
+    const s    = list.find(x => x.id === id);
+    $("#snapshot-title").textContent = s ? `${s.label} — ${humanDate(date)} ${formatTime(s.timestamp)}` : "Snapshot";
+    $("#snapshot-meta").innerHTML = s
+      ? `📷 ${s.camera || "—"} &nbsp;·&nbsp; 🕒 ${new Date(s.timestamp).toLocaleString()}`
+      : "";
+    openModal("modal-snapshot");
+  } catch (e) {
+    toast("Could not load image: " + e.message, "error");
+  }
+}
+window.openSnapshot = openSnapshot;
+
+
 (async function init() {
   const token = localStorage.getItem(TOKEN_KEY);
   if (token) {

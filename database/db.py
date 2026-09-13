@@ -79,13 +79,15 @@ def _migrate() -> None:
 
     # Column adds — Postgres uses IF NOT EXISTS, SQLite uses try/except for dup
     migrations = [
-        "ALTER TABLE users    ADD COLUMN is_verified    BOOLEAN DEFAULT FALSE",
-        "ALTER TABLE users    ADD COLUMN verify_code    VARCHAR(8)",
-        "ALTER TABLE users    ADD COLUMN verify_expires TIMESTAMP",
-        "ALTER TABLE agents   ADD COLUMN camera_name    VARCHAR(120)",
-        "ALTER TABLE agents   ADD COLUMN camera_type    VARCHAR(20) DEFAULT 'webcam'",
-        "ALTER TABLE agents   ADD COLUMN camera_user    VARCHAR(120)",
-        "ALTER TABLE agents   ADD COLUMN camera_pass    VARCHAR(255)",
+        "ALTER TABLE users         ADD COLUMN is_verified    BOOLEAN DEFAULT FALSE",
+        "ALTER TABLE users         ADD COLUMN verify_code    VARCHAR(8)",
+        "ALTER TABLE users         ADD COLUMN verify_expires TIMESTAMP",
+        "ALTER TABLE agents        ADD COLUMN camera_name    VARCHAR(120)",
+        "ALTER TABLE agents        ADD COLUMN camera_type    VARCHAR(20) DEFAULT 'webcam'",
+        "ALTER TABLE agents        ADD COLUMN camera_user    VARCHAR(120)",
+        "ALTER TABLE agents        ADD COLUMN camera_pass    VARCHAR(255)",
+        "ALTER TABLE detections    ADD COLUMN snapshot_data  BYTEA",
+        "ALTER TABLE user_settings ADD COLUMN upload_snapshots BOOLEAN DEFAULT FALSE",
     ]
     with engine.begin() as conn:
         for stmt in migrations:

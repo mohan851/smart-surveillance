@@ -56,8 +56,9 @@ class EventIn(BaseModel):
     label         : str
     confidence    : int = 0
     snapshot_path : str | None = None
+    snapshot_b64  : str | None = None            # base64-encoded JPEG (if cloud upload on)
     camera_source : str | None = None
-    timestamp     : str | None = None  # ISO-8601, else now()
+    timestamp     : str | None = None            # ISO-8601, else now()
 
 
 # ── Register: customer runs this from dashboard, gets token back
@@ -132,9 +133,11 @@ def heartbeat(payload: Heartbeat, agent=Depends(get_agent)):
 @router.post("/event")
 def push_event(payload: EventIn, agent=Depends(get_agent)):
     """The local agent calls this whenever it spots a face. The cloud only
-    stores metadata — photos stay on the customer PC (privacy by design)."""
+    stores metadata — photos stay on the customer PC (privacy by design).
+    If the user opted in to cloud uploads, snapshot_b64 is also stored."""
+    import base64
+
     with session_scope() as s:
-        # optional: pull user settings so we can decide whether to mark alert
         settings = s.query(UserSettings).filter_by(user_id=agent["user_id"]).first()
 
         ts = datetime.utcnow()
@@ -144,19 +147,31 @@ def push_event(payload: EventIn, agent=Depends(get_agent)):
             except Exception:
                 pass
 
+        # Only accept snapshot bytes if the user has opted in
+        snap_bytes = None
+        if payload.snapshot_b64 and settings and settings.upload_snapshots:
+            try:
+                snap_bytes = base64.b64decode(payload.snapshot_b64)
+                # Safety cap: 5 MB per image — refuse anything bigger
+                if len(snap_bytes) > 5 * 1024 * 1024:
+                    snap_bytes = None
+            except Exception:
+                snap_bytes = None
+
         d = Detection(
             user_id       = agent["user_id"],
             agent_id      = agent["id"],
             label         = payload.label,
             confidence    = payload.confidence,
             snapshot_path = payload.snapshot_path,
+            snapshot_data = snap_bytes,
             camera_source = payload.camera_source,
             timestamp     = ts,
         )
         s.add(d)
         s.flush()
 
-        # Decide alert channel based on label & settings
+        # Decide alert channel
         channel = "telegram" if settings and settings.telegram_bot_token else "none"
         if settings:
             if payload.label.lower() == "unknown" and not settings.alert_on_unknown:
@@ -172,15 +187,37 @@ def push_event(payload: EventIn, agent=Depends(get_agent)):
             timestamp    = ts,
         ))
 
-        # Bump agent counters
         a = s.query(Agent).filter_by(id=agent["id"]).first()
-        a.events_sent = (a.events_sent or 0) + 1
-        a.last_seen_at= datetime.utcnow()
+        a.events_sent  = (a.events_sent or 0) + 1
+        a.last_seen_at = datetime.utcnow()
 
         return {
-            "ok":           True,
-            "detection_id": d.id,
-            "alert_channel":channel,
+            "ok":            True,
+            "detection_id":  d.id,
+            "alert_channel": channel,
+            "snapshot_saved": snap_bytes is not None,
+        }
+
+
+# ── Config endpoint (called by agent on startup) ──────────
+@router.get("/config")
+def agent_config(agent=Depends(get_agent)):
+    """Agent calls this on startup to learn its current config
+    (upload_snapshots, telegram_enabled, snapshot_dir, cooldown)."""
+    with session_scope() as s:
+        settings = s.query(UserSettings).filter_by(user_id=agent["user_id"]).first()
+        if not settings:
+            return {
+                "upload_snapshots":  False,
+                "telegram_enabled":   False,
+                "snapshot_dir":       "snapshots",
+                "detection_cooldown": 10,
+            }
+        return {
+            "upload_snapshots":   bool(settings.upload_snapshots),
+            "telegram_enabled":   bool(settings.telegram_bot_token and settings.telegram_chat_id),
+            "snapshot_dir":       settings.snapshot_dir or "snapshots",
+            "detection_cooldown": settings.detection_cooldown or 10,
         }
 
 

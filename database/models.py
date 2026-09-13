@@ -11,7 +11,7 @@ Schema design:
 from __future__ import annotations
 from datetime import datetime
 from sqlalchemy import (
-    Column, Integer, String, Text, DateTime, ForeignKey, Boolean, Index
+    Column, Integer, String, Text, DateTime, ForeignKey, Boolean, Index, LargeBinary
 )
 from sqlalchemy.orm import declarative_base, relationship
 
@@ -56,6 +56,7 @@ class UserSettings(Base):
     alert_on_known      = Column(Boolean, default=False)
     snapshot_dir        = Column(String(255), default="snapshots")
     detection_cooldown  = Column(Integer, default=10)         # seconds between alerts
+    upload_snapshots    = Column(Boolean, default=False)      # privacy: off by default
     updated_at          = Column(DateTime, default=datetime.utcnow,
                                  onupdate=datetime.utcnow)
 
@@ -100,6 +101,7 @@ class Detection(Base):
     label         = Column(String(80),   nullable=False)         # "Unknown" or "Mohan"
     confidence    = Column(Integer,      default=0)              # 0-100
     snapshot_path = Column(String(255),  nullable=True)           # local path on customer PC
+    snapshot_data = Column(LargeBinary,  nullable=True)           # JPEG bytes if cloud-uploaded
     camera_source = Column(String(255),  nullable=True)
     timestamp     = Column(DateTime,     default=datetime.utcnow, index=True)
 

@@ -21,6 +21,7 @@ class SettingsIn(BaseModel):
     alert_on_known     : bool | None = None
     snapshot_dir       : str | None = None
     detection_cooldown : int | None = None
+    upload_snapshots   : bool | None = None
 
 
 def _to_dict(row: UserSettings | None) -> dict:
@@ -34,6 +35,7 @@ def _to_dict(row: UserSettings | None) -> dict:
         "alert_on_known":     row.alert_on_known,
         "snapshot_dir":       row.snapshot_dir,
         "detection_cooldown": row.detection_cooldown,
+        "upload_snapshots":   row.upload_snapshots,
         "updated_at":         row.updated_at.isoformat() if row.updated_at else None,
     }
 

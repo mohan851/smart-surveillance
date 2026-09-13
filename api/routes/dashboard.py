@@ -4,12 +4,16 @@ Dashboard data routes — all scoped to the current user.
 - GET /me/detections         paginated list of events
 - GET /me/agents             list this user's agents/cameras
 - GET /me/agent-script/{id}  download Python script for one specific camera
+- GET /me/snapshots/dates    list of dates with photo counts
+- GET /me/snapshots?date=…   list snapshots for one date
+- GET /me/snapshots/{id}/image  serve the JPEG bytes for inline view
 """
 import io
 import platform
 from datetime import datetime, timedelta
-from fastapi import APIRouter, Depends, HTTPException
-from fastapi.responses import StreamingResponse
+from collections import OrderedDict
+from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import StreamingResponse, Response
 from sqlalchemy import desc, func
 
 from api.middleware import get_current_user
@@ -130,7 +134,7 @@ Quick start:
     pip install opencv-python requests
     python agent_eye_local.py
 """
-import os, sys, time, uuid, platform, hashlib
+import os, sys, time, uuid, platform, hashlib, base64
 from datetime import datetime
 import requests, cv2
 
@@ -142,10 +146,15 @@ CAMERA_SOURCE= "{camera_source}"   # 0, rtsp://..., http://..., /path.mp4
 CAMERA_USER  = "{camera_user}"
 CAMERA_PASS  = "{camera_pass}"
 HEARTBEAT_S  = 30
-COOLDOWN_S   = 10
 
 MACHINE_ID   = hashlib.sha256(platform.node().encode()).hexdigest()[:16]
 MACHINE_NAME = platform.node()
+
+# Pulled from /agent/config on startup
+UPLOAD_SNAPSHOTS   = False
+TELEGRAM_ENABLED   = False
+SNAPSHOT_DIR       = "snapshots"
+COOLDOWN_S         = 10
 
 _last_alert = {{}}
 
@@ -156,11 +165,26 @@ def post(path, payload):
             CLOUD_URL + path,
             json=payload,
             headers={{"X-Agent-Token": AGENT_TOKEN}},
-            timeout=10,
+            timeout=15,
         )
     except Exception as e:
         print("[cloud] post failed:", e)
         return None
+
+
+def get_config():
+    """Fetch runtime config from the cloud (upload_snapshots, cooldown, etc.)."""
+    try:
+        r = requests.get(
+            CLOUD_URL + "/agent/config",
+            headers={{"X-Agent-Token": AGENT_TOKEN}},
+            timeout=10,
+        )
+        if r.ok:
+            return r.json()
+    except Exception as e:
+        print("[cloud] config fetch failed (using defaults):", e)
+    return {{}}
 
 
 def open_camera():
@@ -170,14 +194,11 @@ def open_camera():
         return cv2.VideoCapture(idx)
     if CAMERA_TYPE == "rtsp":
         url = CAMERA_SOURCE
-        if CAMERA_USER and CAMERA_PASS:
-            # Inject credentials into RTSP URL if not already present
-            if "@" not in url:
-                from urllib.parse import urlparse, urlunparse
-                p = urlparse(url)
-                netloc = f"{{CAMERA_USER}}:{{CAMERA_PASS}}@{{p.hostname}}" + (f":{{p.port}}" if p.port else "")
-                url = urlunparse(p._replace(netloc=netloc))
-        # FFMPEG backend gives us RTSP/HTTP support; CAP_FFMPEG keeps it explicit
+        if CAMERA_USER and CAMERA_PASS and "@" not in url:
+            from urllib.parse import urlparse, urlunparse
+            p = urlparse(url)
+            netloc = f"{{CAMERA_USER}}:{{CAMERA_PASS}}@{{p.hostname}}" + (f":{{p.port}}" if p.port else "")
+            url = urlunparse(p._replace(netloc=netloc))
         return cv2.VideoCapture(url, cv2.CAP_FFMPEG)
     if CAMERA_TYPE == "http":
         return cv2.VideoCapture(CAMERA_SOURCE)
@@ -191,7 +212,17 @@ def open_camera():
 
 
 def main():
+    global UPLOAD_SNAPSHOTS, TELEGRAM_ENABLED, SNAPSHOT_DIR, COOLDOWN_S
     print(f"Agent Eye agent starting | machine={{MACHINE_NAME}} | camera={{CAMERA_NAME}} ({{CAMERA_TYPE}})")
+
+    # Pull latest config from the cloud
+    cfg = get_config()
+    UPLOAD_SNAPSHOTS = cfg.get("upload_snapshots", False)
+    TELEGRAM_ENABLED = cfg.get("telegram_enabled", False)
+    SNAPSHOT_DIR     = cfg.get("snapshot_dir", "snapshots")
+    COOLDOWN_S       = cfg.get("detection_cooldown", 10)
+    print(f"[config] upload_snapshots={{UPLOAD_SNAPSHOTS}} telegram={{TELEGRAM_ENABLED}} cooldown={{COOLDOWN_S}}s")
+
     cap = open_camera()
     if not cap.isOpened():
         print(f"ERROR: cannot open camera '{{CAMERA_SOURCE}}'")
@@ -204,38 +235,46 @@ def main():
         ok, frame = cap.read()
         if not ok:
             if CAMERA_TYPE == "file":
-                print("[file] end of video — looping")
-                cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
-                continue
+                cap.set(cv2.CAP_PROP_POS_FRAMES, 0); continue
             time.sleep(1); continue
         frame_idx += 1
-        # Run face detection every 3rd frame to save CPU
         if frame_idx % 3 != 0:
             if time.time() - last_hb > HEARTBEAT_S:
                 post("/agent/heartbeat", {{"camera_source": f"{{CAMERA_TYPE}}:{{CAMERA_SOURCE}}"}})
                 last_hb = time.time()
-            time.sleep(0.05)
-            continue
+            time.sleep(0.05); continue
         gray  = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
         faces = cascade.detectMultiScale(gray, 1.3, 5)
         for (x, y, w, h) in faces:
-            snap = os.path.join(
-                "snapshots",
+            snap_path = os.path.join(
+                SNAPSHOT_DIR,
                 f"{{datetime.utcnow():%Y%m%d_%H%M%S}}_{{uuid.uuid4().hex[:6]}}.jpg",
             )
-            os.makedirs("snapshots", exist_ok=True)
-            cv2.imwrite(snap, frame)
+            os.makedirs(SNAPSHOT_DIR, exist_ok=True)
+            cv2.imwrite(snap_path, frame)
+
+            payload = {{
+                "label":         "Unknown",
+                "confidence":    0,
+                "snapshot_path": snap_path,
+                "camera_source": f"{{CAMERA_TYPE}}:{{CAMERA_SOURCE}}",
+                "timestamp":     datetime.utcnow().isoformat(),
+            }}
+
+            # Opt-in: also send the JPEG bytes to the cloud (base64)
+            if UPLOAD_SNAPSHOTS:
+                try:
+                    with open(snap_path, "rb") as fh:
+                        payload["snapshot_b64"] = base64.b64encode(fh.read()).decode("ascii")
+                except Exception as e:
+                    print("[upload] failed to read snapshot:", e)
+
             now = time.time()
             if now - _last_alert.get("face", 0) > COOLDOWN_S:
                 _last_alert["face"] = now
-                post("/agent/event", {{
-                    "label":         "Unknown",
-                    "confidence":    0,
-                    "snapshot_path": snap,
-                    "camera_source": f"{{CAMERA_TYPE}}:{{CAMERA_SOURCE}}",
-                    "timestamp":     datetime.utcnow().isoformat(),
-                }})
-                print(f"[detection] {{CAMERA_NAME}} face @ {{snap}}")
+                resp = post("/agent/event", payload)
+                tag = "+cloud" if UPLOAD_SNAPSHOTS else "local-only"
+                print(f"[detection] {{CAMERA_NAME}} face @ {{snap_path}} ({{tag}})")
         if time.time() - last_hb > HEARTBEAT_S:
             post("/agent/heartbeat", {{"camera_source": f"{{CAMERA_TYPE}}:{{CAMERA_SOURCE}}"}})
             last_hb = time.time()
@@ -245,3 +284,74 @@ def main():
 if __name__ == "__main__":
     main()
 '''
+
+
+# ══════════════════════════════════════════════
+# Cloud-uploaded snapshots — date-grouped viewer
+# ══════════════════════════════════════════════
+
+@router.get("/snapshots/dates")
+def snapshots_dates(current_user=Depends(get_current_user)):
+    """List dates that have at least one cloud-uploaded snapshot,
+    with the count per date. Powers the date-folders in the dashboard."""
+    uid = current_user["id"]
+    with session_scope() as s:
+        rows = (
+            s.query(Detection.timestamp, Detection.id)
+             .filter(Detection.user_id == uid, Detection.snapshot_data.isnot(None))
+             .order_by(desc(Detection.timestamp))
+             .all()
+        )
+    # Group by date (UTC)
+    by_date = OrderedDict()
+    for ts, _id in rows:
+        key = ts.strftime("%Y-%m-%d")
+        by_date[key] = by_date.get(key, 0) + 1
+    return [{"date": d, "count": c} for d, c in by_date.items()]
+
+
+@router.get("/snapshots")
+def snapshots_for_date(date: str = Query(..., description="YYYY-MM-DD"),
+                       current_user=Depends(get_current_user)):
+    """List all cloud snapshots for one date. Returns metadata + thumbnail URLs."""
+    try:
+        day_start = datetime.strptime(date, "%Y-%m-%d")
+    except ValueError:
+        raise HTTPException(status_code=400, detail="date must be YYYY-MM-DD")
+    day_end = day_start + timedelta(days=1)
+    uid = current_user["id"]
+    with session_scope() as s:
+        rows = (
+            s.query(Detection)
+             .filter(Detection.user_id == uid,
+                     Detection.snapshot_data.isnot(None),
+                     Detection.timestamp >= day_start,
+                     Detection.timestamp <  day_end)
+             .order_by(desc(Detection.timestamp))
+             .all()
+        )
+        out = []
+        for r in rows:
+            out.append({
+                "id":         r.id,
+                "label":      r.label,
+                "timestamp":  r.timestamp.isoformat() if r.timestamp else None,
+                "has_image":  r.snapshot_data is not None,
+                "image_url":  f"/me/snapshots/{r.id}/image" if r.snapshot_data else None,
+                "camera":     r.camera_source or "—",
+            })
+        return out
+
+
+@router.get("/snapshots/{snap_id}/image")
+def snapshot_image(snap_id: int, current_user=Depends(get_current_user)):
+    """Serve the raw JPEG bytes for inline display in the dashboard."""
+    with session_scope() as s:
+        r = s.query(Detection).filter_by(id=snap_id, user_id=current_user["id"]).first()
+        if not r or not r.snapshot_data:
+            raise HTTPException(status_code=404, detail="Snapshot not found")
+        return Response(
+            content=bytes(r.snapshot_data),
+            media_type="image/jpeg",
+            headers={"Cache-Control": "private, max-age=3600"},
+        )
