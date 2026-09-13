@@ -1,10 +1,9 @@
 """
 Dashboard data routes — all scoped to the current user.
-- GET /me/stats           summary counts
-- GET /me/detections      paginated list of events
-- GET /me/agents          list this user's agents
-- GET /me/agent-script    returns the downloadable local agent script
-                         with the customer's token pre-baked
+- GET /me/stats              summary counts
+- GET /me/detections         paginated list of events
+- GET /me/agents             list this user's agents/cameras
+- GET /me/agent-script/{id}  download Python script for one specific camera
 """
 import io
 import platform
@@ -75,6 +74,8 @@ def my_agents(current_user=Depends(get_current_user)):
                 "id":           a.id,
                 "machine_id":   a.machine_id,
                 "machine_name": a.machine_name,
+                "camera_name":  a.camera_name or a.machine_name,
+                "camera_type":  a.camera_type or "webcam",
                 "camera_source":a.camera_source,
                 "status":       a.status,
                 "events_sent":  a.events_sent,
@@ -84,76 +85,144 @@ def my_agents(current_user=Depends(get_current_user)):
         return out
 
 
-@router.get("/agent-script")
-def download_agent_script(current_user=Depends(get_current_user)):
-    """Return the local agent Python file with the user's token pre-filled."""
-    # We need at least one agent token to inject. Pick the most recent one.
+@router.get("/agent-script/{agent_id}")
+def download_agent_script(agent_id: int, current_user=Depends(get_current_user)):
+    """Return the local agent Python file tailored to one specific camera."""
     with session_scope() as s:
-        a = s.query(Agent).filter_by(user_id=current_user["id"]) \
-                          .order_by(desc(Agent.created_at)).first()
-        token = a.agent_token if a else ""
+        a = s.query(Agent).filter_by(id=agent_id, user_id=current_user["id"]).first()
+        if not a:
+            raise HTTPException(status_code=404, detail="Agent not found")
+        token       = a.agent_token
+        cam_type    = a.camera_type or "webcam"
+        cam_source  = a.camera_source or "0"
+        cam_name    = a.camera_name or a.machine_name or "camera"
+        cam_user    = a.camera_user or ""
+        cam_pass    = a.camera_pass or ""
+
     script = AGENT_SCRIPT_TEMPLATE.format(
-        cloud_url   = "https://smart-surveillance-production.up.railway.app",
-        agent_token = token,
-        username    = current_user["username"],
+        cloud_url    = "https://smart-surveillance-production.up.railway.app",
+        agent_token  = token,
+        username     = current_user["username"],
+        camera_type  = cam_type,
+        camera_source= cam_source,
+        camera_name  = cam_name,
+        camera_user  = cam_user,
+        camera_pass  = cam_pass,
     )
+    fname = f"agent_eye_{re.sub(r'[^a-z0-9]+', '_', cam_name.lower())}.py"
     return StreamingResponse(
         io.BytesIO(script.encode("utf-8")),
         media_type="text/x-python",
-        headers={"Content-Disposition": 'attachment; filename="agent_eye_local.py"'},
+        headers={"Content-Disposition": f'attachment; filename="{fname}"'},
     )
 
 
-# ── The agent script template (downloaded by customers) ─
+# ── Agent script template (camera-aware) ─────────────────
+import re
+
 AGENT_SCRIPT_TEMPLATE = r'''#!/usr/bin/env python3
 """
 Agent Eye — local agent for customer: {username}
-This file was auto-generated. Do not share it — it contains your agent token.
+Camera:     {camera_name}  ({camera_type})
+Auto-generated. Do not share — it contains your agent token.
 
 Quick start:
     pip install opencv-python requests
     python agent_eye_local.py
 """
-import os, sys, time, json, uuid, platform, hashlib
+import os, sys, time, uuid, platform, hashlib
 from datetime import datetime
 import requests, cv2
 
 CLOUD_URL    = "{cloud_url}"
 AGENT_TOKEN  = "{agent_token}"
+CAMERA_TYPE  = "{camera_type}"     # webcam | rtsp | http | file
+CAMERA_NAME  = "{camera_name}"
+CAMERA_SOURCE= "{camera_source}"   # 0, rtsp://..., http://..., /path.mp4
+CAMERA_USER  = "{camera_user}"
+CAMERA_PASS  = "{camera_pass}"
+HEARTBEAT_S  = 30
+COOLDOWN_S   = 10
+
 MACHINE_ID   = hashlib.sha256(platform.node().encode()).hexdigest()[:16]
 MACHINE_NAME = platform.node()
-HEARTBEAT_S  = 30
-COOLDOWN_S   = 10   # min seconds between alerts for the same label
 
-_last_alert = {{}}  # label -> timestamp
+_last_alert = {{}}
+
 
 def post(path, payload):
     try:
-        return requests.post(CLOUD_URL + path, json=payload,
-                             headers={{"X-Agent-Token": AGENT_TOKEN}}, timeout=10)
+        return requests.post(
+            CLOUD_URL + path,
+            json=payload,
+            headers={{"X-Agent-Token": AGENT_TOKEN}},
+            timeout=10,
+        )
     except Exception as e:
         print("[cloud] post failed:", e)
         return None
 
+
+def open_camera():
+    """Open the configured camera source. Returns cv2.VideoCapture."""
+    if CAMERA_TYPE == "webcam":
+        idx = int(CAMERA_SOURCE) if CAMERA_SOURCE.isdigit() else 0
+        return cv2.VideoCapture(idx)
+    if CAMERA_TYPE == "rtsp":
+        url = CAMERA_SOURCE
+        if CAMERA_USER and CAMERA_PASS:
+            # Inject credentials into RTSP URL if not already present
+            if "@" not in url:
+                from urllib.parse import urlparse, urlunparse
+                p = urlparse(url)
+                netloc = f"{{CAMERA_USER}}:{{CAMERA_PASS}}@{{p.hostname}}" + (f":{{p.port}}" if p.port else "")
+                url = urlunparse(p._replace(netloc=netloc))
+        # FFMPEG backend gives us RTSP/HTTP support; CAP_FFMPEG keeps it explicit
+        return cv2.VideoCapture(url, cv2.CAP_FFMPEG)
+    if CAMERA_TYPE == "http":
+        return cv2.VideoCapture(CAMERA_SOURCE)
+    if CAMERA_TYPE == "file":
+        if not os.path.exists(CAMERA_SOURCE):
+            print(f"ERROR: video file not found: {{CAMERA_SOURCE}}")
+            sys.exit(1)
+        return cv2.VideoCapture(CAMERA_SOURCE)
+    print(f"ERROR: unknown camera_type {{CAMERA_TYPE}}")
+    sys.exit(1)
+
+
 def main():
-    print(f"Agent Eye local agent starting (machine={{MACHINE_NAME}})")
-    # Open default webcam
-    cap = cv2.VideoCapture(0)
+    print(f"Agent Eye agent starting | machine={{MACHINE_NAME}} | camera={{CAMERA_NAME}} ({{CAMERA_TYPE}})")
+    cap = open_camera()
     if not cap.isOpened():
-        print("ERROR: cannot open webcam. Check camera permissions.")
+        print(f"ERROR: cannot open camera '{{CAMERA_SOURCE}}'")
         sys.exit(1)
     cascade = cv2.CascadeClassifier(
         cv2.data.haarcascades + "haarcascade_frontalface_default.xml")
     last_hb = 0
+    frame_idx = 0
     while True:
         ok, frame = cap.read()
         if not ok:
+            if CAMERA_TYPE == "file":
+                print("[file] end of video — looping")
+                cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+                continue
             time.sleep(1); continue
+        frame_idx += 1
+        # Run face detection every 3rd frame to save CPU
+        if frame_idx % 3 != 0:
+            if time.time() - last_hb > HEARTBEAT_S:
+                post("/agent/heartbeat", {{"camera_source": f"{{CAMERA_TYPE}}:{{CAMERA_SOURCE}}"}})
+                last_hb = time.time()
+            time.sleep(0.05)
+            continue
         gray  = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
         faces = cascade.detectMultiScale(gray, 1.3, 5)
         for (x, y, w, h) in faces:
-            # Privacy: snapshot saved LOCALLY, only path+label sent to cloud
-            snap = os.path.join("snapshots", f"{{datetime.utcnow():%Y%m%d_%H%M%S}}_{{uuid.uuid4().hex[:6]}}.jpg")
+            snap = os.path.join(
+                "snapshots",
+                f"{{datetime.utcnow():%Y%m%d_%H%M%S}}_{{uuid.uuid4().hex[:6]}}.jpg",
+            )
             os.makedirs("snapshots", exist_ok=True)
             cv2.imwrite(snap, frame)
             now = time.time()
@@ -163,14 +232,15 @@ def main():
                     "label":         "Unknown",
                     "confidence":    0,
                     "snapshot_path": snap,
-                    "camera_source": "webcam:0",
+                    "camera_source": f"{{CAMERA_TYPE}}:{{CAMERA_SOURCE}}",
                     "timestamp":     datetime.utcnow().isoformat(),
                 }})
-                print("[detection] face @", snap)
+                print(f"[detection] {{CAMERA_NAME}} face @ {{snap}}")
         if time.time() - last_hb > HEARTBEAT_S:
-            post("/agent/heartbeat", {{"camera_source": "webcam:0"}})
+            post("/agent/heartbeat", {{"camera_source": f"{{CAMERA_TYPE}}:{{CAMERA_SOURCE}}"}})
             last_hb = time.time()
-        time.sleep(0.1)
+        time.sleep(0.05)
+
 
 if __name__ == "__main__":
     main()

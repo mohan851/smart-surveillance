@@ -29,6 +29,9 @@ class User(Base):
     role          = Column(String(20),  nullable=False, default="customer")
     full_name     = Column(String(120), nullable=True)
     company       = Column(String(120), nullable=True)
+    is_verified   = Column(Boolean,     default=False)
+    verify_code   = Column(String(8),   nullable=True)             # 6-digit OTP
+    verify_expires= Column(DateTime,    nullable=True)
     created_at    = Column(DateTime,    default=datetime.utcnow)
     last_login_at = Column(DateTime,    nullable=True)
     is_active     = Column(Boolean,     default=True)
@@ -69,7 +72,11 @@ class Agent(Base):
     agent_token    = Column(String(80), unique=True, nullable=False, index=True)
     machine_id     = Column(String(120), nullable=False)
     machine_name   = Column(String(120), nullable=True)
+    camera_name    = Column(String(120), nullable=True)
+    camera_type    = Column(String(20),  default="webcam")  # webcam|rtsp|http|file
     camera_source  = Column(String(255), nullable=True)
+    camera_user    = Column(String(120), nullable=True)
+    camera_pass    = Column(String(255), nullable=True)
     last_seen_at   = Column(DateTime, nullable=True)
     last_ip        = Column(String(64),  nullable=True)
     status         = Column(String(20),  default="offline")  # online|offline|error

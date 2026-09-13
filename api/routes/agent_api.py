@@ -41,7 +41,11 @@ def get_agent(x_agent_token: str = Header(...)) -> dict:
 class RegisterAgent(BaseModel):
     machine_id   : str
     machine_name : str | None = None
-    camera_source: str | None = None
+    camera_name  : str | None = None                # human label: "Front Door"
+    camera_type  : str = "webcam"                   # webcam | rtsp | http | file
+    camera_source: str | None = None                # 0, rtsp://..., http://..., /path.mp4
+    camera_user  : str | None = None                # optional auth for IP cameras
+    camera_pass  : str | None = None
 
 
 class Heartbeat(BaseModel):
@@ -59,14 +63,29 @@ class EventIn(BaseModel):
 # ── Register: customer runs this from dashboard, gets token back
 @router.post("/register")
 def register_agent(payload: RegisterAgent, current_user=Depends(get_current_user)):
+    # Validate camera_type
+    valid_types = {"webcam", "rtsp", "http", "file"}
+    if payload.camera_type not in valid_types:
+        raise HTTPException(
+            status_code=400,
+            detail=f"camera_type must be one of {sorted(valid_types)}",
+        )
+
+    # Build a human-readable camera label for display
+    cam_label = payload.camera_name or (
+        f"Webcam #{payload.camera_source}" if payload.camera_type == "webcam"
+        else payload.camera_source
+    )
+
     with session_scope() as s:
         existing = s.query(Agent).filter_by(
             user_id=current_user["id"], machine_id=payload.machine_id
         ).first()
         if existing:
-            existing.last_seen_at = datetime.utcnow()
-            existing.last_ip      = None  # could parse from request
-            existing.status       = "online"
+            existing.last_seen_at  = datetime.utcnow()
+            existing.status        = "online"
+            existing.camera_source = payload.camera_source
+            existing.machine_name  = payload.machine_name or existing.machine_name
             s.flush()
             s.expunge(existing)
             return {
@@ -79,7 +98,7 @@ def register_agent(payload: RegisterAgent, current_user=Depends(get_current_user
             user_id       = current_user["id"],
             agent_token   = token,
             machine_id    = payload.machine_id,
-            machine_name  = payload.machine_name,
+            machine_name  = payload.machine_name or cam_label,
             camera_source = payload.camera_source,
             status        = "online",
             last_seen_at  = datetime.utcnow(),
@@ -92,6 +111,8 @@ def register_agent(payload: RegisterAgent, current_user=Depends(get_current_user
             "agent_token": a.agent_token,
             "agent_id":    a.id,
             "message":     "Agent registered. Save the token — it won't be shown again.",
+            "camera_type": payload.camera_type,
+            "camera_name": cam_label,
         }
 
 

@@ -64,9 +64,42 @@ SessionLocal = scoped_session(
 
 # ── Public helpers ────────────────────────────────────────
 def init_db() -> None:
-    """Create all tables if missing. Safe to call on every startup."""
+    """Create all tables if missing. Safe to call on every startup.
+    Also runs lightweight column-add migrations for new fields."""
     Base.metadata.create_all(bind=engine)
-    log.info("✅ Database schema ready")
+    _migrate()
+    log.info("Database schema ready")
+
+
+def _migrate() -> None:
+    """Lightweight in-place column migrations. Only adds columns; never drops
+    or alters data. Works on both PostgreSQL (cloud) and SQLite (local)."""
+    from sqlalchemy import text
+    is_pg = "postgresql" in str(engine.url)
+
+    # Column adds — Postgres uses IF NOT EXISTS, SQLite uses try/except for dup
+    migrations = [
+        "ALTER TABLE users    ADD COLUMN is_verified    BOOLEAN DEFAULT FALSE",
+        "ALTER TABLE users    ADD COLUMN verify_code    VARCHAR(8)",
+        "ALTER TABLE users    ADD COLUMN verify_expires TIMESTAMP",
+        "ALTER TABLE agents   ADD COLUMN camera_name    VARCHAR(120)",
+        "ALTER TABLE agents   ADD COLUMN camera_type    VARCHAR(20) DEFAULT 'webcam'",
+        "ALTER TABLE agents   ADD COLUMN camera_user    VARCHAR(120)",
+        "ALTER TABLE agents   ADD COLUMN camera_pass    VARCHAR(255)",
+    ]
+    with engine.begin() as conn:
+        for stmt in migrations:
+            try:
+                if is_pg:
+                    sql = stmt.replace("ADD COLUMN", "ADD COLUMN IF NOT EXISTS")
+                else:
+                    sql = stmt
+                conn.execute(text(sql))
+            except Exception as e:
+                msg = str(e).lower()
+                if "duplicate column" in msg or "already exists" in msg:
+                    continue
+                log.warning("Migration skipped (%s): %s", stmt, e)
 
 
 def get_session():

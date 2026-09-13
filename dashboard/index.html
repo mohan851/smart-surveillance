@@ -465,6 +465,36 @@
   </div>
 </div>
 
+<!-- ════════════════ VERIFY EMAIL ════════════════ -->
+<div id="view-verify" class="hidden">
+  <div class="auth-card">
+    <h2>Verify your email</h2>
+    <p class="subtitle">
+      We sent a 6-digit code to <span id="verify-email-display" style="color: var(--primary);"></span>.<br/>
+      Enter it below to activate your account.
+    </p>
+    <form onsubmit="handleVerify(event)">
+      <input type="hidden" name="username" id="verify-username"/>
+      <div class="field">
+        <label>6-digit code</label>
+        <input class="input" name="code" required pattern="[0-9]{{6}}" maxlength="6"
+               style="font-size: 24px; letter-spacing: 8px; text-align: center; font-family: monospace;"
+               placeholder="000000" inputmode="numeric"/>
+      </div>
+      <button class="btn btn-primary btn-block" type="submit" id="verify-btn">
+        Verify email
+      </button>
+    </form>
+    <p class="footer-link">
+      Didn't get it?
+      <a href="#" onclick="resendCode(); return false;">Resend code</a>
+    </p>
+    <p class="footer-link" style="margin-top: 8px;">
+      <a href="#" onclick="show('landing'); return false;">← Back to home</a>
+    </p>
+  </div>
+</div>
+
 <!-- ════════════════ DASHBOARD ════════════════ -->
 <div id="view-dashboard" class="hidden">
 
@@ -619,29 +649,17 @@
     <section id="section-agents" class="hidden">
       <div class="page-head">
         <div>
-          <h1>Agents</h1>
-          <p>Each agent is a detection camera running on your PC.</p>
+          <h1>Agents / Cameras</h1>
+          <p>Each row below is one camera. Add a webcam, IP camera (RTSP), or video file.</p>
         </div>
-      </div>
-
-      <div class="card" style="margin-bottom: 18px;">
-        <div class="card-title">Register a new agent</div>
-        <p style="color: var(--muted); font-size: 13px; margin-bottom: 14px;">
-          Click below to register this browser as an agent. Then download the Python
-          script, run it on your PC, and it will push detections to this dashboard.
-        </p>
-        <div class="row">
-          <button class="btn btn-primary" onclick="registerAgent()">Register this device</button>
-          <button class="btn btn-ghost"  onclick="downloadAgent()">⬇ Download agent script</button>
-        </div>
+        <button class="btn btn-primary" onclick="openAddCamera()">+ Add camera</button>
       </div>
 
       <div class="card">
-        <div class="card-title">Your agents</div>
         <div class="table-wrap" id="agents-table">
           <div class="empty-state">
-            <div class="empty-state-icon">🤖</div>
-            <div>No agents registered yet.</div>
+            <div class="empty-state-icon">📷</div>
+            <div>No cameras yet. Click "+ Add camera" to register one.</div>
           </div>
         </div>
       </div>
@@ -698,6 +716,58 @@
 
 <!-- ── Toast container ─────────────────────── -->
 <div id="toast-container"></div>
+
+<!-- ════════════════ ADD CAMERA MODAL ════════════════ -->
+<div id="modal-add-camera" class="hidden" style="position:fixed;inset:0;background:rgba(0,0,0,0.6);display:flex;align-items:center;justify-content:center;z-index:100;padding:20px;">
+  <div class="card" style="width:100%;max-width:520px;max-height:90vh;overflow-y:auto;">
+    <div class="row" style="justify-content:space-between;margin-bottom:14px;">
+      <div class="card-title" style="margin:0;">Add a camera</div>
+      <button class="btn btn-ghost btn-sm" onclick="closeModal('modal-add-camera')">✕</button>
+    </div>
+    <p style="color: var(--muted); font-size: 13px; margin-bottom: 18px;">
+      Register a webcam, IP camera, CCTV DVR, or test video file.
+      After saving, you'll get a download link for the Python script
+      that connects to <em>this exact camera</em>.
+    </p>
+    <form onsubmit="handleAddCamera(event)">
+      <div class="field">
+        <label>Camera name</label>
+        <input class="input" name="camera_name" placeholder="Front Door" required/>
+      </div>
+      <div class="field">
+        <label>Camera type</label>
+        <select class="input" name="camera_type" id="camera-type" onchange="updateCameraFields()" required>
+          <option value="webcam">USB Webcam (built-in or USB)</option>
+          <option value="rtsp">IP Camera / CCTV (RTSP)</option>
+          <option value="http">IP Camera (HTTP/MJPEG)</option>
+          <option value="file">Video file (for testing)</option>
+        </select>
+      </div>
+      <div class="field">
+        <label id="source-label">Camera index</label>
+        <input class="input" name="camera_source" id="camera-source"
+               placeholder="0" value="0" required/>
+        <small style="color: var(--muted); font-size: 12px;" id="source-help">
+          0 = first webcam, 1 = second, etc.
+        </small>
+      </div>
+      <div class="row" id="rtsp-creds" style="display:none;">
+        <div class="field" style="flex:1;">
+          <label>Camera username</label>
+          <input class="input" name="camera_user" placeholder="admin"/>
+        </div>
+        <div class="field" style="flex:1;">
+          <label>Camera password</label>
+          <input class="input" name="camera_pass" type="password" placeholder="••••••"/>
+        </div>
+      </div>
+      <div class="row" style="margin-top: 8px;">
+        <button class="btn btn-primary" type="submit" id="add-camera-btn">Register & download</button>
+        <button class="btn btn-ghost" type="button" onclick="closeModal('modal-add-camera')">Cancel</button>
+      </div>
+    </form>
+  </div>
+</div>
 
 <script>
 /* ════════════════════════════════════════════════
@@ -788,12 +858,51 @@ async function handleSignup(e) {
     const r = await api("/auth/signup", { method: "POST", body: JSON.stringify(body) });
     localStorage.setItem(TOKEN_KEY, r.access_token);
     localStorage.setItem(USER_KEY,  JSON.stringify({ id: r.user_id, username: r.username, role: r.role }));
-    toast(`Welcome, ${r.username}!`, "success");
-    enterDashboard();
+    const email = (body.email || "").trim();
+    if (email) {
+      // Email given → must verify before login works
+      $("#verify-username").value      = r.username;
+      $("#verify-email-display").textContent = email;
+      toast(`Verification code sent to ${email}`, "success");
+      show("verify");
+    } else {
+      // No email → auto-verified, straight to dashboard
+      toast(`Welcome, ${r.username}!`, "success");
+      enterDashboard();
+    }
   } catch (err) {
     toast(err.message, "error");
   } finally {
     btn.disabled = false; btn.textContent = "Create account";
+  }
+}
+
+async function handleVerify(e) {
+  e.preventDefault();
+  const btn = $("#verify-btn");
+  btn.disabled = true; btn.textContent = "Verifying…";
+  const fd = new FormData(e.target);
+  const body = Object.fromEntries(fd.entries());
+  try {
+    const r = await api("/auth/verify-email", { method: "POST", body: JSON.stringify(body) });
+    toast(r.message || "Email verified!", "success");
+    show("login");
+  } catch (err) {
+    toast(err.message, "error");
+  } finally {
+    btn.disabled = false; btn.textContent = "Verify email";
+  }
+}
+
+async function resendCode() {
+  const username = $("#verify-username").value;
+  if (!username) return;
+  try {
+    const r = await api(`/auth/resend-verification?username=${encodeURIComponent(username)}`,
+                       { method: "POST" });
+    toast(r.message || "Code resent", "success");
+  } catch (err) {
+    toast(err.message, "error");
   }
 }
 
@@ -802,6 +911,7 @@ async function handleLogin(e) {
   const btn = $("#login-btn");
   btn.disabled = true; btn.textContent = "Logging in…";
   const fd = new FormData(e.target);
+  const username = fd.get("username");
   const body = new URLSearchParams();
   fd.forEach((v, k) => body.append(k, v));
   try {
@@ -812,7 +922,15 @@ async function handleLogin(e) {
     });
     if (!r.ok) {
       const j = await r.json().catch(() => ({}));
-      throw new Error(j.detail || `HTTP ${r.status}`);
+      const detail = j.detail || `HTTP ${r.status}`;
+      // If they need to verify email, offer to redirect
+      if (detail.toLowerCase().includes("verify")) {
+        $("#verify-username").value = username;
+        toast(detail, "error");
+        show("verify");
+        return;
+      }
+      throw new Error(detail);
     }
     const data = await r.json();
     localStorage.setItem(TOKEN_KEY, data.access_token);
@@ -950,29 +1068,41 @@ async function testTelegram() {
 }
 
 // ── Agents ────────────────────────────────────
+// ── Agents / Cameras ──────────────────────────
 async function loadAgents() {
   try {
     const rows = await api("/me/agents");
     const el = $("#agents-table");
     if (!rows.length) {
-      el.innerHTML = `<div class="empty-state"><div class="empty-state-icon">🤖</div><div>No agents registered yet. Click "Register this device" above.</div></div>`;
+      el.innerHTML = `<div class="empty-state">
+        <div class="empty-state-icon">📷</div>
+        <div>No cameras yet.</div>
+        <button class="btn btn-primary btn-sm" style="margin-top:14px;" onclick="openAddCamera()">+ Add your first camera</button>
+      </div>`;
       return;
     }
     el.innerHTML = `
       <table>
-        <thead><tr><th>Machine</th><th>Camera</th><th>Status</th><th>Events sent</th><th>Last seen</th><th>Created</th></tr></thead>
+        <thead><tr>
+          <th>Camera</th><th>Type</th><th>Source</th><th>Status</th>
+          <th>Events</th><th>Last seen</th><th>Actions</th>
+        </tr></thead>
         <tbody>${rows.map(a => `
           <tr>
-            <td><strong>${a.machine_name || a.machine_id}</strong><br/><span style="color:var(--muted);font-size:11px;">${a.machine_id}</span></td>
-            <td>${a.camera_source || "—"}</td>
+            <td><strong>${a.camera_name || a.machine_name || "Camera"}</strong><br/>
+                <span style="color:var(--muted);font-size:11px;">${a.machine_id}</span></td>
+            <td>${typePill(a.camera_type)}</td>
+            <td style="font-family:monospace;font-size:12px;">${a.camera_source || "—"}</td>
             <td>${statusPill(a.status)}</td>
             <td>${a.events_sent ?? 0}</td>
             <td>${fmtRel(a.last_seen_at)}</td>
-            <td>${fmtTime(a.created_at)}</td>
+            <td>
+              <button class="btn btn-ghost btn-sm" onclick="downloadAgentScript(${a.id})">⬇ Script</button>
+            </td>
           </tr>`).join("")}
         </tbody>
       </table>`;
-  } catch (e) { toast("Failed to load agents: " + e.message, "error"); }
+  } catch (e) { toast("Failed to load cameras: " + e.message, "error"); }
 }
 
 function statusPill(s) {
@@ -981,38 +1111,101 @@ function statusPill(s) {
   return `<span class="pill pill-danger">${s || "unknown"}</span>`;
 }
 
-async function registerAgent() {
-  const machineId = "web-" + Math.random().toString(36).slice(2, 10);
-  try {
-    const r = await api("/agent/register", {
-      method: "POST",
-      body: JSON.stringify({
-        machine_id: machineId,
-        machine_name: navigator.userAgent.split(") ")[0].split("(")[1] || "Browser",
-        camera_source: "browser",
-      }),
-    });
-    toast(`Agent registered (token saved).`, "success");
-    loadAgents();
-  } catch (e) { toast("Register failed: " + e.message, "error"); }
+function typePill(t) {
+  const map = {
+    webcam: '<span class="pill pill-success">webcam</span>',
+    rtsp:   '<span class="pill pill-success">RTSP</span>',
+    http:   '<span class="pill pill-success">HTTP</span>',
+    file:   '<span class="pill pill-muted">video file</span>',
+  };
+  return map[t] || `<span class="pill pill-muted">${t || "?"}</span>`;
 }
 
-async function downloadAgent() {
+// ── Modal helpers ─────────────────────────────
+function openModal(id) { $("#" + id).classList.remove("hidden"); }
+function closeModal(id) { $("#" + id).classList.add("hidden"); }
+function openAddCamera()  { openModal("modal-add-camera"); updateCameraFields(); }
+window.openModal = openModal; window.closeModal = closeModal;
+window.openAddCamera = openAddCamera;
+window.addEventListener("keydown", e => { if (e.key === "Escape") closeModal("modal-add-camera"); });
+
+// ── Add camera: switch input hints by type ────
+function updateCameraFields() {
+  const t = $("#camera-type").value;
+  const src = $("#camera-source");
+  const lbl = $("#source-label");
+  const help = $("#source-help");
+  const creds = $("#rtsp-creds");
+  if (t === "webcam") {
+    lbl.textContent = "Camera index"; src.placeholder = "0"; src.value = "0";
+    help.textContent = "0 = first webcam, 1 = second, etc.";
+    creds.style.display = "none";
+  } else if (t === "rtsp") {
+    lbl.textContent = "RTSP URL"; src.placeholder = "rtsp://user:pass@192.168.1.100:554/stream";
+    help.textContent = "Most IP cameras and DVRs expose RTSP on port 554.";
+    creds.style.display = "flex";
+  } else if (t === "http") {
+    lbl.textContent = "HTTP/MJPEG URL"; src.placeholder = "http://192.168.1.100/video";
+    help.textContent = "Some cheap IP cameras serve MJPEG over HTTP.";
+    creds.style.display = "none";
+  } else if (t === "file") {
+    lbl.textContent = "Video file path"; src.placeholder = "C:/videos/test.mp4";
+    help.textContent = "Use an absolute path. The agent will loop the video.";
+    creds.style.display = "none";
+  }
+}
+window.updateCameraFields = updateCameraFields;
+
+async function handleAddCamera(e) {
+  e.preventDefault();
+  const btn = $("#add-camera-btn");
+  btn.disabled = true; btn.textContent = "Registering…";
+  const f = e.target;
+  const body = {
+    machine_id   : "cam-" + Math.random().toString(36).slice(2, 10),
+    machine_name : f.camera_name.value,
+    camera_name  : f.camera_name.value,
+    camera_type  : f.camera_type.value,
+    camera_source: f.camera_source.value,
+    camera_user  : f.camera_user ? f.camera_user.value : null,
+    camera_pass  : f.camera_pass ? f.camera_pass.value : null,
+  };
+  try {
+    const r = await api("/agent/register", { method: "POST", body: JSON.stringify(body) });
+    toast("Camera registered!", "success");
+    closeModal("modal-add-camera");
+    loadAgents();
+    // Auto-trigger the script download for the new camera
+    if (r.agent_id) setTimeout(() => downloadAgentScript(r.agent_id), 400);
+  } catch (e) {
+    toast("Failed: " + e.message, "error");
+  } finally {
+    btn.disabled = false; btn.textContent = "Register & download";
+  }
+}
+window.handleAddCamera = handleAddCamera;
+
+async function downloadAgentScript(agentId) {
   try {
     const token = localStorage.getItem(TOKEN_KEY);
-    const r = await fetch(API + "/me/agent-script", {
+    const r = await fetch(API + `/me/agent-script/${agentId}`, {
       headers: { "Authorization": `Bearer ${token}` },
     });
     if (!r.ok) throw new Error("HTTP " + r.status);
     const blob = await r.blob();
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url; a.download = "agent_eye_local.py";
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement("a");
+    a.href = url;
+    // Pull filename from Content-Disposition if present
+    const cd = r.headers.get("Content-Disposition") || "";
+    const m = cd.match(/filename="?([^"]+)"?/);
+    a.download = m ? m[1] : `agent_eye_${agentId}.py`;
     a.click();
     URL.revokeObjectURL(url);
-    toast("Script downloaded — run `python agent_eye_local.py` on your PC.", "success");
+    toast("Script downloaded — run `pip install opencv-python requests` then `python " + a.download + "`.", "success");
   } catch (e) { toast("Download failed: " + e.message, "error"); }
 }
+window.downloadAgentScript = downloadAgentScript;
 
 // ── Detections ────────────────────────────────
 async function loadDetections() {
