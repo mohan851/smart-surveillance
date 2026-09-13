@@ -8,6 +8,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet"/>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
   <style>
     /* ── Reset + Base ─────────────────────────────────── */
     * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -517,6 +518,9 @@
     <div class="nav-item active" data-section="home"       onclick="navTo('home')">
       <span class="nav-icon">📊</span> Dashboard
     </div>
+    <div class="nav-item"        data-section="live"       onclick="navTo('live')">
+      <span class="nav-icon">🎥</span> Live
+    </div>
     <div class="nav-item"        data-section="settings"   onclick="navTo('settings')">
       <span class="nav-icon">⚙️</span> Settings
     </div>
@@ -582,6 +586,67 @@
           <div class="empty-state">
             <div class="empty-state-icon">📭</div>
             <div>No detections yet. Run your local agent to start.</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ── Live section (browser webcam + face-api.js) ── -->
+    <section id="section-live" class="hidden">
+      <div class="page-head">
+        <div>
+          <h1>🎥 Live Detection</h1>
+          <p>Run face detection right in your browser. No Python needed.</p>
+        </div>
+        <div class="row">
+          <span id="live-status-pill" class="pill pill-muted">Disconnected</span>
+        </div>
+      </div>
+
+      <div class="card" style="margin-bottom: 18px;">
+        <div id="live-disconnected" class="col" style="gap: 14px;">
+          <div style="color: var(--muted); font-size: 14px;">
+            Click <strong>Connect Camera</strong> below. Your browser will ask for camera
+            permission, then start detecting faces in real time. Snapshots are saved
+            automatically based on your cloud-upload setting.
+          </div>
+          <div class="row" style="gap: 10px; flex-wrap: wrap;">
+            <select class="input" id="live-camera-select" style="width: auto; min-width: 240px;">
+              <option value="">Loading cameras…</option>
+            </select>
+            <button class="btn btn-primary" id="live-connect-btn" onclick="liveConnect()">
+              📷 Connect Camera
+            </button>
+            <button class="btn btn-ghost" onclick="liveLoadCameras()">🔄 Refresh cameras</button>
+          </div>
+          <div id="live-model-status" style="font-size: 12px; color: var(--muted);">
+            First connect will download the face detection model (~6 MB).
+          </div>
+        </div>
+
+        <div id="live-connected" class="hidden" style="display:flex; gap: 18px; flex-wrap: wrap;">
+          <div style="position: relative; flex: 1; min-width: 320px; background: #000; border-radius: 12px; overflow: hidden;">
+            <video id="live-video" autoplay muted playsinline
+                   style="display: block; width: 100%; height: auto; transform: scaleX(-1);"></video>
+            <canvas id="live-canvas"
+                    style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; transform: scaleX(-1); pointer-events: none;"></canvas>
+            <div id="live-recording-dot"
+                 style="position: absolute; top: 12px; left: 12px; width: 10px; height: 10px; background: #ef4444; border-radius: 50%; box-shadow: 0 0 10px #ef4444; display: none;"></div>
+          </div>
+          <div class="col" style="min-width: 240px; flex: 0 0 280px; gap: 14px;">
+            <div class="stat-card">
+              <div class="stat-label">Detected this session</div>
+              <div class="stat-value" id="live-count">0</div>
+              <div class="stat-meta" id="live-last">No detection yet</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-label">Camera</div>
+              <div class="stat-value" id="live-cam-name" style="font-size: 16px;">—</div>
+              <div class="stat-meta" id="live-cam-resolution">—</div>
+            </div>
+            <button class="btn btn-danger btn-block" onclick="liveDisconnect()">
+              ⏹ Disconnect
+            </button>
           </div>
         </div>
       </div>
@@ -656,7 +721,10 @@
           </div>
           <div class="row" style="margin-top: 8px;">
             <button class="btn btn-primary" type="submit" id="save-settings-btn">Save settings</button>
-            <button class="btn btn-ghost" type="button" onclick="testTelegram()">Send test message</button>
+            <button class="btn btn-ghost" type="button" onclick="testTelegram()"
+                    title="Sends a test 'Agent Eye connected' message to your Telegram chat so you can confirm your bot token + chat ID work.">
+              📨 Send test message
+            </button>
           </div>
         </form>
       </div>
@@ -776,7 +844,9 @@
       </div>
       <div class="field">
         <label id="source-label">Camera index</label>
-        <input class="input" name="camera_source" id="camera-source"
+        <!-- For webcam: a dropdown. For RTSP/HTTP/file: a text input. -->
+        <select class="input" name="camera_source" id="camera-source-select" style="display:none;"></select>
+        <input class="input" name="camera_source" id="camera-source-input"
                placeholder="0" value="0" required/>
         <small style="color: var(--muted); font-size: 12px;" id="source-help">
           0 = first webcam, 1 = second, etc.
@@ -827,12 +897,12 @@ const USER_KEY  = "agent_eye_user";
 const $ = sel => document.querySelector(sel);
 const $$ = sel => Array.from(document.querySelectorAll(sel));
 
-function toast(msg, kind = "info") {
+function toast(msg, kind = "info", ms = 3500) {
   const el = document.createElement("div");
   el.className = `toast ${kind}`;
   el.textContent = msg;
   $("#toast-container").appendChild(el);
-  setTimeout(() => el.remove(), 3500);
+  setTimeout(() => el.remove(), ms);
 }
 
 function fmtTime(iso) {
@@ -876,12 +946,13 @@ function show(view) {
 
 function navTo(section) {
   $$(".nav-item").forEach(n => n.classList.toggle("active", n.dataset.section === section));
-  ["home","settings","agents","snapshots","detections","reports"].forEach(s => {
+  ["home","live","settings","agents","snapshots","detections","reports"].forEach(s => {
     $("#section-" + s).classList.toggle("hidden", s !== section);
   });
   if (section === "agents")     loadAgents();
   if (section === "snapshots")  loadSnapshotDates();
   if (section === "detections") loadDetections();
+  if (section === "live" && !liveModelsLoaded) liveLoadCameras();
 }
 
 // ── Auth ──────────────────────────────────────
@@ -1179,28 +1250,58 @@ window.openAddCamera = openAddCamera;
 window.addEventListener("keydown", e => { if (e.key === "Escape") closeModal("modal-add-camera"); });
 
 // ── Add camera: switch input hints by type ────
-function updateCameraFields() {
-  const t = $("#camera-type").value;
-  const src = $("#camera-source");
-  const lbl = $("#source-label");
+async function updateCameraFields() {
+  const t    = $("#camera-type").value;
+  const sel  = $("#camera-source-select");
+  const inp  = $("#camera-source-input");
+  const lbl  = $("#source-label");
   const help = $("#source-help");
-  const creds = $("#rtsp-creds");
+  const creds= $("#rtsp-creds");
   if (t === "webcam") {
-    lbl.textContent = "Camera index"; src.placeholder = "0"; src.value = "0";
-    help.textContent = "0 = first webcam, 1 = second, etc.";
+    lbl.textContent = "Webcam";
+    help.textContent = "Pick the camera connected to this PC. We auto-detected these in your browser.";
     creds.style.display = "none";
-  } else if (t === "rtsp") {
-    lbl.textContent = "RTSP URL"; src.placeholder = "rtsp://user:pass@192.168.1.100:554/stream";
-    help.textContent = "Most IP cameras and DVRs expose RTSP on port 554.";
-    creds.style.display = "flex";
-  } else if (t === "http") {
-    lbl.textContent = "HTTP/MJPEG URL"; src.placeholder = "http://192.168.1.100/video";
-    help.textContent = "Some cheap IP cameras serve MJPEG over HTTP.";
-    creds.style.display = "none";
-  } else if (t === "file") {
-    lbl.textContent = "Video file path"; src.placeholder = "C:/videos/test.mp4";
-    help.textContent = "Use an absolute path. The agent will loop the video.";
-    creds.style.display = "none";
+    // Populate the dropdown with cameras we can see
+    sel.innerHTML = `<option value="0">Default webcam (index 0)</option>`;
+    try {
+      // We can only enumerate labels via getUserMedia + track.getCapabilities
+      // Quick check: ask for permission briefly
+      const tmp = await navigator.mediaDevices.getUserMedia({ video: true }).catch(() => null);
+      if (tmp) {
+        tmp.getTracks().forEach(t => t.stop());
+      }
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      devices.filter(d => d.kind === "videoinput").forEach((d, i) => {
+        const opt = document.createElement("option");
+        opt.value       = i.toString();
+        opt.textContent = d.label || `Camera ${i}`;
+        sel.appendChild(opt);
+      });
+    } catch (e) {
+      // Permission denied or browser doesn't expose labels — keep the default
+    }
+    sel.style.display = "";
+    inp.style.display = "none";
+    inp.removeAttribute("required");
+    sel.setAttribute("required", "required");
+  } else {
+    inp.setAttribute("required", "required");
+    sel.removeAttribute("required");
+    sel.style.display = "none";
+    inp.style.display = "";
+    if (t === "rtsp") {
+      lbl.textContent = "RTSP URL"; inp.placeholder = "rtsp://user:pass@192.168.1.100:554/stream"; inp.value = "";
+      help.textContent = "Most IP cameras and DVRs expose RTSP on port 554.";
+      creds.style.display = "flex";
+    } else if (t === "http") {
+      lbl.textContent = "HTTP/MJPEG URL"; inp.placeholder = "http://192.168.1.100/video"; inp.value = "";
+      help.textContent = "Some cheap IP cameras serve MJPEG over HTTP.";
+      creds.style.display = "none";
+    } else if (t === "file") {
+      lbl.textContent = "Video file path"; inp.placeholder = "C:/videos/test.mp4"; inp.value = "";
+      help.textContent = "Use an absolute path. The agent will loop the video.";
+      creds.style.display = "none";
+    }
   }
 }
 window.updateCameraFields = updateCameraFields;
@@ -1210,12 +1311,14 @@ async function handleAddCamera(e) {
   const btn = $("#add-camera-btn");
   btn.disabled = true; btn.textContent = "Registering…";
   const f = e.target;
+  const isWebcam = f.camera_type.value === "webcam";
+  const source   = isWebcam ? f["camera-source-select"].value : f["camera-source-input"].value;
   const body = {
     machine_id   : "cam-" + Math.random().toString(36).slice(2, 10),
     machine_name : f.camera_name.value,
     camera_name  : f.camera_name.value,
     camera_type  : f.camera_type.value,
-    camera_source: f.camera_source.value,
+    camera_source: source,
     camera_user  : f.camera_user ? f.camera_user.value : null,
     camera_pass  : f.camera_pass ? f.camera_pass.value : null,
   };
@@ -1224,8 +1327,12 @@ async function handleAddCamera(e) {
     toast("Camera registered!", "success");
     closeModal("modal-add-camera");
     loadAgents();
-    // Auto-trigger the script download for the new camera
-    if (r.agent_id) setTimeout(() => downloadAgentScript(r.agent_id), 400);
+    if (isWebcam && r.agent_id) {
+      // For webcams, suggest the Live page instead of a Python script
+      toast("Tip: use the 🎥 Live page to detect faces right in your browser.", "info", 6000);
+    } else if (r.agent_id) {
+      setTimeout(() => downloadAgentScript(r.agent_id), 400);
+    }
   } catch (e) {
     toast("Failed: " + e.message, "error");
   } finally {
@@ -1423,6 +1530,203 @@ async function openSnapshot(id, date) {
   }
 }
 window.openSnapshot = openSnapshot;
+
+
+// ══════════════════════════════════════════════
+// Live browser-based webcam detection
+// Uses face-api.js (TensorFlow.js) running IN the browser.
+// Sends snapshots to the cloud via /me/browser-event.
+// ══════════════════════════════════════════════
+
+const MODEL_URL = "https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/weights";
+let liveModelsLoaded = false;
+let liveStream       = null;
+let liveDetectRAF    = null;
+let liveCount        = 0;
+let liveLastDetect   = null;
+let liveCooldownUntil= 0;
+
+async function liveLoadCameras() {
+  const sel = $("#live-camera-select");
+  sel.innerHTML = `<option value="">Detecting cameras…</option>`;
+  try {
+    // Need to ask permission first to get device labels
+    const tmp = await navigator.mediaDevices.getUserMedia({ video: true });
+    tmp.getTracks().forEach(t => t.stop());
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    const cams    = devices.filter(d => d.kind === "videoinput");
+    sel.innerHTML = `<option value="">— pick a camera —</option>` +
+      cams.map((d, i) => `<option value="${d.deviceId}">${d.label || `Camera ${i}`}</option>`).join("");
+    if (!cams.length) sel.innerHTML = `<option value="">No camera found</option>`;
+  } catch (e) {
+    sel.innerHTML = `<option value="">Permission denied — allow camera access</option>`;
+  }
+}
+
+async function liveLoadModels() {
+  if (liveModelsLoaded) return;
+  const status = $("#live-model-status");
+  status.textContent = "Downloading face detection model (~6 MB) — first time only…";
+  try {
+    await Promise.all([
+      faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL),
+    ]);
+    liveModelsLoaded = true;
+    status.textContent = "✓ Model ready.";
+  } catch (e) {
+    status.innerHTML = `<span style="color:var(--danger);">Model failed to load: ${e.message}<br/>Check your internet connection.</span>`;
+    throw e;
+  }
+}
+
+async function liveConnect() {
+  const sel = $("#live-camera-select");
+  if (!sel.value) { toast("Please pick a camera first", "error"); return; }
+
+  const btn = $("#live-connect-btn");
+  btn.disabled = true; btn.textContent = "Loading model…";
+
+  try {
+    await liveLoadModels();
+
+    btn.textContent = "Requesting camera…";
+    liveStream = await navigator.mediaDevices.getUserMedia({
+      video: { deviceId: { exact: sel.value }, width: { ideal: 640 }, height: { ideal: 480 } },
+      audio: false,
+    });
+
+    const video  = $("#live-video");
+    const canvas = $("#live-canvas");
+    video.srcObject = liveStream;
+    await video.play();
+
+    canvas.width  = video.videoWidth  || 640;
+    canvas.height = video.videoHeight || 480;
+
+    $("#live-disconnected").classList.add("hidden");
+    $("#live-connected").classList.remove("hidden");
+    $("#live-recording-dot").style.display = "block";
+    $("#live-status-pill").className = "pill pill-success";
+    $("#live-status-pill").textContent = "● Live";
+
+    const track = liveStream.getVideoTracks()[0];
+    const settings = track.getSettings();
+    $("#live-cam-name").textContent = track.label || "Webcam";
+    $("#live-cam-resolution").textContent = `${settings.width || "?"} × ${settings.height || "?"}`;
+
+    liveCount = 0;
+    $("#live-count").textContent = "0";
+    $("#live-last").textContent   = "Watching for faces…";
+
+    startLiveDetectLoop();
+    toast("Camera connected — watching for faces", "success");
+  } catch (e) {
+    toast("Camera failed: " + e.message, "error");
+  } finally {
+    btn.disabled = false; btn.textContent = "📷 Connect Camera";
+  }
+}
+
+function startLiveDetectLoop() {
+  const video  = $("#live-video");
+  const canvas = $("#live-canvas");
+  const ctx    = canvas.getContext("2d");
+  const detector = new faceapi.TinyFaceDetectorOptions({ inputSize: 320, scoreThreshold: 0.5 });
+
+  let lastTick = 0;
+  const COOLDOWN_MS = 2000;  // 2 seconds between captures
+
+  async function tick(ts) {
+    if (!liveStream) return;
+    liveDetectRAF = requestAnimationFrame(tick);
+    if (ts - lastTick < 160) return;
+    lastTick = ts;
+
+    const results = await faceapi.detectAllFaces(video, detector);
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    if (results.length === 0) return;
+
+    ctx.lineWidth   = 3;
+    ctx.strokeStyle = "#10b981";
+    ctx.font        = "16px Inter, sans-serif";
+    ctx.fillStyle   = "#10b981";
+    results.forEach(r => {
+      const { x, y, width, height } = r.box;
+      ctx.strokeRect(x, y, width, height);
+      ctx.fillText("face", x, y - 6);
+    });
+
+    if (Date.now() < liveCooldownUntil) return;
+    liveCooldownUntil = Date.now() + COOLDOWN_MS;
+
+    await liveCaptureAndUpload(video, results.length);
+  }
+  liveDetectRAF = requestAnimationFrame(tick);
+}
+
+async function liveCaptureAndUpload(video, faceCount) {
+  const off = document.createElement("canvas");
+  off.width  = video.videoWidth  || 640;
+  off.height = video.videoHeight || 480;
+  const octx = off.getContext("2d");
+  // Undo the CSS mirror so saved JPEGs aren't flipped
+  octx.translate(off.width, 0);
+  octx.scale(-1, 1);
+  octx.drawImage(video, 0, 0, off.width, off.height);
+
+  const blob = await new Promise(r => off.toBlob(r, "image/jpeg", 0.85));
+  if (!blob) return;
+
+  const b64 = await new Promise((res, rej) => {
+    const fr = new FileReader();
+    fr.onload = () => res(fr.result.split(",")[1]);
+    fr.onerror = rej;
+    fr.readAsDataURL(blob);
+  });
+
+  liveCount++;
+  liveLastDetect = new Date();
+  $("#live-count").textContent = liveCount;
+  $("#live-last").textContent   = `Last: ${liveLastDetect.toLocaleTimeString()}`;
+
+  try {
+    await api("/me/browser-event", {
+      method: "POST",
+      body: JSON.stringify({
+        label:         "Unknown",
+        confidence:    0,
+        snapshot_b64:  b64,
+        camera_source: `browser:${video.videoWidth}x${video.videoHeight}`,
+        timestamp:     liveLastDetect.toISOformat ? liveLastDetect.toISOString() : new Date().toISOString(),
+      }),
+    });
+  } catch (e) {
+    console.error("upload failed:", e);
+    toast("Cloud upload failed: " + e.message, "error");
+  }
+}
+
+function liveDisconnect() {
+  if (liveDetectRAF) cancelAnimationFrame(liveDetectRAF);
+  liveDetectRAF = null;
+  if (liveStream) {
+    liveStream.getTracks().forEach(t => t.stop());
+    liveStream = null;
+  }
+  const video = $("#live-video");
+  video.srcObject = null;
+
+  $("#live-connected").classList.add("hidden");
+  $("#live-disconnected").classList.remove("hidden");
+  $("#live-recording-dot").style.display = "none";
+  $("#live-status-pill").className = "pill pill-muted";
+  $("#live-status-pill").textContent = "Disconnected";
+  toast("Camera disconnected", "info");
+}
+window.liveConnect      = liveConnect;
+window.liveDisconnect   = liveDisconnect;
+window.liveLoadCameras  = liveLoadCameras;
 
 
 (async function init() {

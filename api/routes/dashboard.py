@@ -14,6 +14,7 @@ from datetime import datetime, timedelta
 from collections import OrderedDict
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse, Response
+from pydantic import BaseModel
 from sqlalchemy import desc, func
 
 from api.middleware import get_current_user
@@ -355,3 +356,65 @@ def snapshot_image(snap_id: int, current_user=Depends(get_current_user)):
             media_type="image/jpeg",
             headers={"Cache-Control": "private, max-age=3600"},
         )
+
+
+# ── Browser-side detection event (JWT auth, not agent token) ──
+class BrowserEventIn(BaseModel):
+    label         : str = "Unknown"
+    confidence    : int = 0
+    snapshot_b64  : str | None = None
+    camera_source : str | None = None
+    timestamp     : str | None = None
+
+
+@router.post("/browser-event")
+def browser_event(payload: BrowserEventIn, current_user=Depends(get_current_user)):
+    """Called by the Live Detection page in the browser.
+    JWT-authenticated (no agent_token needed) so the logged-in user can
+    push detection events directly from the dashboard."""
+    import base64
+    with session_scope() as s:
+        settings = s.query(UserSettings).filter_by(user_id=current_user["id"]).first()
+
+        snap_bytes = None
+        if payload.snapshot_b64 and settings and settings.upload_snapshots:
+            try:
+                snap_bytes = base64.b64decode(payload.snapshot_b64)
+                if len(snap_bytes) > 5 * 1024 * 1024:
+                    snap_bytes = None
+            except Exception:
+                snap_bytes = None
+
+        d = Detection(
+            user_id       = current_user["id"],
+            agent_id      = None,
+            label         = payload.label,
+            confidence    = payload.confidence,
+            snapshot_path = None,
+            snapshot_data = snap_bytes,
+            camera_source = payload.camera_source or "browser",
+            timestamp     = datetime.utcnow(),
+        )
+        s.add(d)
+        s.flush()
+
+        channel = "telegram" if settings and settings.telegram_bot_token else "none"
+        if settings:
+            if payload.label.lower() == "unknown" and not settings.alert_on_unknown:
+                channel = "none"
+            if payload.label.lower() != "unknown" and not settings.alert_on_known:
+                channel = "none"
+        s.add(Alert(
+            user_id      = current_user["id"],
+            detection_id = d.id,
+            channel      = channel,
+            status       = "queued",
+            timestamp    = datetime.utcnow(),
+        ))
+
+        return {
+            "ok":            True,
+            "detection_id":  d.id,
+            "alert_channel": channel,
+            "snapshot_saved": snap_bytes is not None,
+        }
