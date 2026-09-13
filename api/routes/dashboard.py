@@ -404,17 +404,35 @@ def browser_event(payload: BrowserEventIn, current_user=Depends(get_current_user
                 channel = "none"
             if payload.label.lower() != "unknown" and not settings.alert_on_known:
                 channel = "none"
-        s.add(Alert(
+        alert = Alert(
             user_id      = current_user["id"],
             detection_id = d.id,
             channel      = channel,
             status       = "queued",
             timestamp    = datetime.utcnow(),
-        ))
+        )
+        s.add(alert)
+        s.flush()
+
+        # Actually send the Telegram alert (if configured and channel = telegram)
+        if channel == "telegram" and settings.telegram_bot_token and settings.telegram_chat_id:
+            from alerts.telegram import send_telegram_alert
+            ok, msg = send_telegram_alert(
+                bot_token      = settings.telegram_bot_token,
+                chat_id        = settings.telegram_chat_id,
+                label          = payload.label,
+                camera         = payload.camera_source,
+                timestamp      = d.timestamp,
+                snapshot_bytes = snap_bytes,
+            )
+            alert.status        = "sent" if ok else "failed"
+            alert.error_message = None if ok else msg
+            s.flush()
 
         return {
-            "ok":            True,
-            "detection_id":  d.id,
-            "alert_channel": channel,
+            "ok":             True,
+            "detection_id":   d.id,
+            "alert_channel":  channel,
+            "alert_status":   alert.status,
             "snapshot_saved": snap_bytes is not None,
         }

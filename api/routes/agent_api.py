@@ -187,14 +187,30 @@ def push_event(payload: EventIn, agent=Depends(get_agent)):
             timestamp    = ts,
         ))
 
+        # Actually send the Telegram alert if configured
+        alert_row = s.query(Alert).filter_by(detection_id=d.id).first()
+        if channel == "telegram" and settings and settings.telegram_bot_token and settings.telegram_chat_id:
+            from alerts.telegram import send_telegram_alert
+            ok, msg = send_telegram_alert(
+                bot_token      = settings.telegram_bot_token,
+                chat_id        = settings.telegram_chat_id,
+                label          = payload.label,
+                camera         = payload.camera_source,
+                timestamp      = ts,
+                snapshot_bytes = snap_bytes,
+            )
+            alert_row.status        = "sent" if ok else "failed"
+            alert_row.error_message = None if ok else msg
+
         a = s.query(Agent).filter_by(id=agent["id"]).first()
         a.events_sent  = (a.events_sent or 0) + 1
         a.last_seen_at = datetime.utcnow()
 
         return {
-            "ok":            True,
-            "detection_id":  d.id,
-            "alert_channel": channel,
+            "ok":             True,
+            "detection_id":   d.id,
+            "alert_channel":  channel,
+            "alert_status":   alert_row.status,
             "snapshot_saved": snap_bytes is not None,
         }
 

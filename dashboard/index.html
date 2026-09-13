@@ -1538,7 +1538,7 @@ window.openSnapshot = openSnapshot;
 // Sends snapshots to the cloud via /me/browser-event.
 // ══════════════════════════════════════════════
 
-const MODEL_URL = "https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/weights";
+const MODEL_URL = "https://cdn.jsdelivr.net/gh/justadudewhohacks/face-api.js@master/weights";
 let liveModelsLoaded = false;
 let liveStream       = null;
 let liveDetectRAF    = null;
@@ -1566,17 +1566,34 @@ async function liveLoadCameras() {
 async function liveLoadModels() {
   if (liveModelsLoaded) return;
   const status = $("#live-model-status");
-  status.textContent = "Downloading face detection model (~6 MB) — first time only…";
-  try {
-    await Promise.all([
-      faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL),
-    ]);
-    liveModelsLoaded = true;
-    status.textContent = "✓ Model ready.";
-  } catch (e) {
-    status.innerHTML = `<span style="color:var(--danger);">Model failed to load: ${e.message}<br/>Check your internet connection.</span>`;
-    throw e;
+
+  // Try multiple model CDNs in order — first that succeeds wins
+  const candidates = [
+    "https://cdn.jsdelivr.net/gh/justadudewhohacks/face-api.js@master/weights",
+    "https://cdn.jsdelivr.net/npm/@vladmandic/face-api/model",
+    "https://raw.githubusercontent.com/justadudewhohacks/face-api.js/master/weights",
+  ];
+
+  for (const url of candidates) {
+    try {
+      status.innerHTML = `Downloading face detection model from <code>${url.split("//")[1].split("/")[0]}</code>…`;
+      await faceapi.nets.tinyFaceDetector.loadFromUri(url);
+      liveModelsLoaded = true;
+      status.innerHTML = `✓ Model ready (<code>${url.split("//")[1].split("/")[0]}</code>).`;
+      return;
+    } catch (e) {
+      console.warn("Model URL failed:", url, e);
+      // try next
+    }
   }
+
+  // All CDNs failed
+  status.innerHTML = `
+    <span style="color:var(--danger);">
+      All model CDNs failed. Check your internet connection, then
+      <a href="#" onclick="liveModelsLoaded=false; liveLoadModels(); return false;">click to retry</a>.
+    </span>`;
+  throw new Error("All model CDNs unreachable");
 }
 
 async function liveConnect() {
