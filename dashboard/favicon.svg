@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <defs>
+    <linearGradient id="g" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%"  stop-color="#5b8cff"/>
+      <stop offset="100%" stop-color="#a855f7"/>
+    </linearGradient>
+  </defs>
+  <!-- Rounded square background -->
+  <rect width="64" height="64" rx="14" fill="url(#g)"/>
+  <!-- Eye outline -->
+  <path d="M8 32 C 18 18, 46 18, 56 32 C 46 46, 18 46, 8 32 Z"
+        fill="none" stroke="white" stroke-width="3" stroke-linejoin="round"/>
+  <!-- Iris -->
+  <circle cx="32" cy="32" r="10" fill="white"/>
+  <circle cx="32" cy="32" r="6"  fill="url(#g)"/>
+  <!-- Pupil highlight -->
+  <circle cx="35" cy="29" r="2"  fill="white"/>
+</svg>
