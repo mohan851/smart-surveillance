@@ -3,6 +3,9 @@
 <head>
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
+  <meta http-equiv="Pragma" content="no-cache"/>
+  <meta http-equiv="Expires" content="0"/>
   <title>Agent Eye — AI Surveillance</title>
   <meta name="description" content="Privacy-first face detection SaaS. Run on your own machine, get real-time alerts on Telegram, view all snapshots in one dashboard."/>
 
@@ -55,6 +58,8 @@
       --grad-live: linear-gradient(135deg, #ff0033 0%, #ff6600 100%);
     }
     * { margin: 0; padding: 0; box-sizing: border-box; }
+    /* Bootstrap 5 removed .hidden — we re-add it as !important */
+    .hidden { display: none !important; }
     html, body {
       font-family: 'Inter', system-ui, sans-serif;
       background: var(--bg);
@@ -1076,12 +1081,17 @@ async function api(path, opts = {}) {
 }
 
 // ── Toast ───────────────────────────────────
+let toastCount = 0;
+const TOAST_MAX = 3;
 function toast(msg, kind = 'info', ms = 3500) {
+  const c = document.getElementById('toast-container');
+  // Drop oldest if at max — prevents spam loops
+  while (c.children.length >= TOAST_MAX) c.removeChild(c.firstChild);
   const el = document.createElement('div');
   el.className = 'toast-msg ' + kind;
   el.textContent = msg;
-  document.getElementById('toast-container').appendChild(el);
-  setTimeout(() => el.remove(), ms);
+  c.appendChild(el);
+  setTimeout(() => { try { el.remove(); } catch(e) {} }, ms);
 }
 
 // ── Format ──────────────────────────────────
