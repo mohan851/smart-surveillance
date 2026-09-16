@@ -88,6 +88,7 @@ def _migrate() -> None:
         "ALTER TABLE agents        ADD COLUMN camera_pass    VARCHAR(255)",
         "ALTER TABLE detections    ADD COLUMN snapshot_data  BYTEA",
         "ALTER TABLE user_settings ADD COLUMN upload_snapshots BOOLEAN DEFAULT FALSE",
+        "ALTER TABLE user_settings ADD COLUMN cloud_retention_days INTEGER DEFAULT 30",
     ]
     with engine.begin() as conn:
         for stmt in migrations:

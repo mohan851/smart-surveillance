@@ -8,13 +8,13 @@ import os
 # from restrictive networks. Password URL-encoded for special chars.
 SUPABASE_DB_URL = os.getenv(
     "DATABASE_URL",
-    "postgresql://postgres.hbaovhrochduxafdedzc:Mohan%24123%21%40%23@aws-0-ap-southeast-1.pooler.supabase.com:6543/postgres"
+    "postgresql://postgres.hbaovhrochduxafdedzc:cinS6pmCo28Nn4uc@aws-0-ap-southeast-1.pooler.supabase.com:6543/postgres"
 )
 # Direct fallback (port 5432). Use this if you ever switch to a long-lived
 # server pool. Not used by default because Railway can idle out :5432.
 SUPABASE_DIRECT_URL = os.getenv(
     "DATABASE_DIRECT_URL",
-    "postgresql://postgres:Mohan%24123%21%40%23@db.hbaovhrochduxafdedzc.supabase.co:5432/postgres"
+    "postgresql://postgres:cinS6pmCo28Nn4uc@db.hbaovhrochduxafdedzc.supabase.co:5432/postgres"
 )
 # Use SQLite for local dev (no Supabase needed) OR when env flag is set
 USE_SQLITE      = os.getenv("USE_SQLITE", "").lower() in ("1", "true", "yes")

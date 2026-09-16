@@ -57,6 +57,7 @@ class UserSettings(Base):
     snapshot_dir        = Column(String(255), default="snapshots")
     detection_cooldown  = Column(Integer, default=10)         # seconds between alerts
     upload_snapshots    = Column(Boolean, default=False)      # privacy: off by default
+    cloud_retention_days= Column(Integer, default=30)         # auto-delete cloud snapshots older than N days
     updated_at          = Column(DateTime, default=datetime.utcnow,
                                  onupdate=datetime.utcnow)
 

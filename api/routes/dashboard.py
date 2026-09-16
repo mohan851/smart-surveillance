@@ -358,6 +358,26 @@ def snapshot_image(snap_id: int, current_user=Depends(get_current_user)):
         )
 
 
+@router.delete("/snapshots/cleanup")
+def cleanup_old_snapshots(current_user=Depends(get_current_user)):
+    """Delete cloud snapshots older than the user's retention setting
+    (default 30 days). Called automatically when the Snapshots page loads.
+    Local copies on customer's PC are untouched."""
+    uid = current_user["id"]
+    with session_scope() as s:
+        settings = s.query(UserSettings).filter_by(user_id=uid).first()
+        days = (settings.cloud_retention_days if settings else 30) or 30
+        cutoff = datetime.utcnow() - timedelta(days=days)
+        deleted = (
+            s.query(Detection)
+             .filter(Detection.user_id == uid,
+                     Detection.snapshot_data.isnot(None),
+                     Detection.timestamp < cutoff)
+             .delete(synchronize_session=False)
+        )
+    return {"deleted": deleted, "retention_days": days, "cutoff": cutoff.isoformat()}
+
+
 # ── Browser-side detection event (JWT auth, not agent token) ──
 class BrowserEventIn(BaseModel):
     label         : str = "Unknown"

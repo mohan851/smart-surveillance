@@ -22,6 +22,7 @@ class SettingsIn(BaseModel):
     snapshot_dir       : str | None = None
     detection_cooldown : int | None = None
     upload_snapshots   : bool | None = None
+    cloud_retention_days: int | None = None
 
 
 def _to_dict(row: UserSettings | None) -> dict:
@@ -36,6 +37,7 @@ def _to_dict(row: UserSettings | None) -> dict:
         "snapshot_dir":       row.snapshot_dir,
         "detection_cooldown": row.detection_cooldown,
         "upload_snapshots":   row.upload_snapshots,
+        "cloud_retention_days": row.cloud_retention_days or 30,
         "updated_at":         row.updated_at.isoformat() if row.updated_at else None,
     }
 
