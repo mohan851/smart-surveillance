@@ -65,6 +65,28 @@
     .form-text { color: #d8d8e8 !important; }
     .small { color: #d8d8e8; }
     code { color: var(--primary); }
+    /* Placeholder text — visible on dark */
+    .form-control::placeholder, .form-select::placeholder { color: #6a6a85 !important; }
+    /* Disabled state */
+    .form-control:disabled, .form-control[readonly] { background: #1a1a28; color: #d8d8e8; }
+    /* Modal close button — make it visible */
+    .btn-close { filter: invert(1) opacity(0.8); }
+    /* Select dropdown options need light bg + dark text */
+    select option { background: #1c1c30; color: #fff; }
+    /* Empty-state paragraphs get explicit color */
+    .empty-state, .empty-state * { color: #d8d8e8; }
+    /* Form-check labels inherit darker default */
+    .form-check-label { color: #e5e5f0; }
+    /* Modal title */
+    .modal-title { color: #fff; }
+    /* Form labels (we styled them with form-label) — already muted. Force lighter */
+    .form-label { color: #d8d8e8 !important; }
+    /* Anchor tags inside light text */
+    a, a:visited { color: #00d4ff; }
+    /* Modal body text */
+    .modal-body { color: #e5e5f0; }
+    /* Disabled button */
+    .btn:disabled { color: #8a8aa8; }
     html, body {
       font-family: 'Inter', system-ui, sans-serif;
       background: var(--bg);
