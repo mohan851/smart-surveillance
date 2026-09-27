@@ -58,7 +58,7 @@ def _safe_init_db():
 app = FastAPI(
     title       = "Agent Eye API",
     description = "AI-powered multi-tenant smart surveillance",
-    version     = "2.1.0",
+    version     = "2.2.0",
 )
 
 # ── CORS ─────────────────────────────────────────────────
