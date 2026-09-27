@@ -16,8 +16,18 @@ SUPABASE_DIRECT_URL = os.getenv(
     "DATABASE_DIRECT_URL",
     "postgresql://postgres:cinS6pmCo28Nn4uc@db.hbaovhrochduxafdedzc.supabase.co:5432/postgres"
 )
-# Use SQLite for local dev (no Supabase needed) OR when env flag is set
-USE_SQLITE      = os.getenv("USE_SQLITE", "").lower() in ("1", "true", "yes")
+# Use SQLite for local dev (no Supabase needed) OR when env flag is set.
+# SAFETY: never allow SQLite on Railway — its filesystem is ephemeral
+# so any data we save would be wiped on the next deploy.
+_ON_RAILWAY = bool(os.getenv("RAILWAY_ENVIRONMENT")) or os.path.exists("/app")
+USE_SQLITE_REQUESTED = os.getenv("USE_SQLITE", "").lower() in ("1", "true", "yes")
+if _ON_RAILWAY and USE_SQLITE_REQUESTED:
+    import warnings
+    warnings.warn(
+        "USE_SQLITE=1 is set but ignored because we're on Railway "
+        "(ephemeral filesystem). Using PostgreSQL instead."
+    )
+USE_SQLITE = USE_SQLITE_REQUESTED and not _ON_RAILWAY
 
 # ── Base paths ──────────────────────────────────────────
 BASE_DIR        = os.path.dirname(os.path.abspath(__file__))
