@@ -19,7 +19,19 @@ SUPABASE_DIRECT_URL = os.getenv(
 # Use SQLite for local dev (no Supabase needed) OR when env flag is set.
 # SAFETY: never allow SQLite on Railway — its filesystem is ephemeral
 # so any data we save would be wiped on the next deploy.
-_ON_RAILWAY = bool(os.getenv("RAILWAY_ENVIRONMENT")) or os.path.exists("/app")
+# Railway detection: it sets RAILWAY_PROJECT_ID, RAILWAY_SERVICE_ID,
+# RAILWAY_ENVIRONMENT, and PORT. Any of these = we're on Railway.
+def _detect_railway():
+    for v in ("RAILWAY_PROJECT_ID", "RAILWAY_SERVICE_ID",
+              "RAILWAY_ENVIRONMENT", "RAILWAY_DEPLOYMENT_ID",
+              "RAILWAY_STATIC_URL"):
+        if os.getenv(v):
+            return True
+    # Railway Nixpacks image runs from /app
+    if os.path.isdir("/app") and os.access("/app", os.W_OK):
+        return True
+    return False
+_ON_RAILWAY = _detect_railway()
 USE_SQLITE_REQUESTED = os.getenv("USE_SQLITE", "").lower() in ("1", "true", "yes")
 if _ON_RAILWAY and USE_SQLITE_REQUESTED:
     import warnings
@@ -28,6 +40,9 @@ if _ON_RAILWAY and USE_SQLITE_REQUESTED:
         "(ephemeral filesystem). Using PostgreSQL instead."
     )
 USE_SQLITE = USE_SQLITE_REQUESTED and not _ON_RAILWAY
+# Debug — visible in startup logs (print so it shows up even before logging is configured)
+import os as _os
+print(f"[config] _ON_RAILWAY={_ON_RAILWAY} USE_SQLITE_REQUESTED={USE_SQLITE_REQUESTED} USE_SQLITE={USE_SQLITE}", flush=True)
 
 # ── Base paths ──────────────────────────────────────────
 BASE_DIR        = os.path.dirname(os.path.abspath(__file__))
