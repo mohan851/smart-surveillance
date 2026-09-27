@@ -1,0 +1,37 @@
+# Fly.io configuration for Agent Eye
+# Docs: https://fly.io/docs/reference/configuration/
+
+app = "agent-eye-mohan"            # must be globally unique; change if taken
+primary_region = "sin"              # Singapore (same as Supabase region)
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  PORT = "8080"
+  # USE_SQLITE is intentionally NOT set — config.py forces Postgres on Fly.io
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = "stop"        # free tier: stop when idle to save hours
+  auto_start_machines = true
+  min_machines_running = 0           # scales to 0 when idle (free tier friendly)
+
+  [http_service.concurrency]
+    type = "requests"
+    soft_limit = 200
+    hard_limit = 250
+
+  [[http_service.checks]]
+    interval     = "30s"
+    timeout      = "5s"
+    grace_period = "30s"
+    method       = "GET"
+    path         = "/health/live"
+
+[[vm]]
+  size      = "shared-cpu-1x"        # free tier: 1 shared CPU, 256 MB RAM
+  memory    = "256mb"
+  cpu_kind  = "shared"
+  cpus      = 1
